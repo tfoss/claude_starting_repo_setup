@@ -47,6 +47,12 @@ This file provides instructions and context for Claude Code when working in this
 - Avoid deep nesting — extract helper functions or use early returns.
 - No magic numbers or strings — use named constants.
 
+## Output Files
+
+- **Never overwrite existing output files.** When generating output files (reports, exports, build artifacts, data files, etc.), always use a unique name — e.g., by appending a timestamp, sequence number, or run identifier.
+- Only overwrite an existing output file if the user explicitly requests it by name.
+- This protects prior results from accidental loss and preserves a history of outputs for comparison and debugging.
+
 ## Project Structure Conventions
 
 ```
