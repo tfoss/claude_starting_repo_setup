@@ -62,6 +62,20 @@ docs/          # Additional documentation
 scripts/       # Utility scripts (build, deploy, etc.)
 ```
 
+## Project Brief
+
+Before starting work, **always check for a `PROJECT.md`** file in the repo root. It contains the project's purpose, scope, and constraints. All implementation decisions should align with it.
+
+If `PROJECT.md` exists, review these sections before writing any code:
+- **One-liner** — What the project is in a single sentence.
+- **Problem** — Why it needs to exist; the pain point it solves.
+- **Core behaviors** — What it should do (user-facing capabilities, prioritized as must-have vs nice-to-have).
+- **Inputs / Outputs** — Data formats, file types, APIs consumed or exposed.
+- **Constraints** — Language/framework requirements, performance targets, environment limits.
+- **Non-goals** — What is explicitly out of scope. Do not build toward non-goals.
+
+If `PROJECT.md` does not exist, ask the user to describe the project before beginning significant implementation work.
+
 ## Workflow
 
 1. **Check beads** for assigned tasks or pick the next priority item.
