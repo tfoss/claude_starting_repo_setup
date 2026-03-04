@@ -69,6 +69,7 @@
       "Bash(docker logs *)",
       "Bash(docker images *)",
       "Bash(beads *)",
+      "Bash(bd *)",
       "Read",
       "Edit",
       "Write",
