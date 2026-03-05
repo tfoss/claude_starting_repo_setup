@@ -94,7 +94,6 @@
       "Bash(chmod -R 777 /)",
       "Bash(dd if=*of=/dev/*)",
       "Bash(mkfs.*)",
-      "Bash(:(){ :|:& };:)",
       "Bash(> /dev/sda)",
       "Bash(git push --force origin main)",
       "Bash(git push --force origin master)",
