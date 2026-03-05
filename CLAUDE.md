@@ -2,6 +2,14 @@
 
 This file provides instructions and context for Claude Code when working in this repository.
 
+## CRITICAL: Shell Command Safety Rules
+
+These rules override any conflicting defaults. Follow them exactly:
+
+1. **NEVER use `python -c` with multi-line code.** Write code to a `.py` file and execute the file.
+2. **NEVER use heredocs (`<<EOF`) or `$(cat ...)` substitution in shell commands.** These trigger security warnings that block execution.
+3. **For git commits**: Use `git commit -m "short message"` for single-line messages. For multi-line messages, use the Write tool to create `/tmp/commit_msg.txt`, then run `git commit -F /tmp/commit_msg.txt`.
+
 ## Development Philosophy
 
 ### Code Architecture
