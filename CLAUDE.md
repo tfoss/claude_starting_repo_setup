@@ -102,4 +102,4 @@ If `PROJECT.md` does not exist, ask the user to describe the project before begi
 - Push the branch to the remote.
 - Do NOT leave uncommitted work. If tests pass and the task is done, commit and push immediately.
 - If work is partially complete and you are stopping, commit what you have with a message noting it is work-in-progress.
-- **Commit message format**: For short messages, use `git commit -m "message"`. For longer multi-line messages, write the message to a temporary file and use `git commit -F /tmp/commit_msg.txt` — do NOT use heredocs or inline multi-line strings with `#` characters, as these trigger security warnings.
+- **Commit message format**: For short single-line messages, use `git commit -m "message"`. For longer or multi-line messages, first write the message to a file using the Write tool (e.g., `/tmp/commit_msg.txt`), then run `git commit -F /tmp/commit_msg.txt`. Do NOT use heredocs, `$(cat ...)` substitution, or inline multi-line strings — these trigger security warnings about command substitution and hidden arguments.
