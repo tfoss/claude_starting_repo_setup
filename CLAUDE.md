@@ -39,6 +39,13 @@ This file provides instructions and context for Claude Code when working in this
 - Reference bead IDs in commit messages when applicable.
 - Update bead status as work progresses.
 
+## Environment
+
+- If the project uses **conda**, always activate the correct environment before running any Python commands: `conda activate <env-name>`
+- The environment name and setup instructions are defined in `environment.yml` at the repo root.
+- Never install packages globally — always install into the project's conda environment.
+- If `environment.yml` exists, use it as the source of truth for dependencies.
+
 ## Code Style & Conventions
 
 - Follow the language's idiomatic conventions (PEP 8 for Python, StandardJS for JS, etc.).
@@ -84,4 +91,13 @@ If `PROJECT.md` does not exist, ask the user to describe the project before begi
 4. **Implement** the solution with small, composable functions.
 5. **Run all tests** and ensure they pass.
 6. **Commit** with a clear message referencing the bead.
-7. **Push** and create a PR for review.
+7. **Push** the branch to the remote.
+
+## Agent Commit Policy
+
+**You MUST commit your work.** When you complete a task, bead, or meaningful unit of work:
+- Stage the relevant files and create a git commit.
+- Write a clear commit message summarizing the change and referencing the bead ID if applicable.
+- Push the branch to the remote.
+- Do NOT leave uncommitted work. If tests pass and the task is done, commit and push immediately.
+- If work is partially complete and you are stopping, commit what you have with a message noting it is work-in-progress.
