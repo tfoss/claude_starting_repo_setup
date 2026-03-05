@@ -53,6 +53,7 @@ This file provides instructions and context for Claude Code when working in this
 - Keep functions short — if a function exceeds ~30 lines, consider breaking it up.
 - Avoid deep nesting — extract helper functions or use early returns.
 - No magic numbers or strings — use named constants.
+- **No inline multi-line scripts in bash commands.** Do not pass multi-line Python (or other language) code as a string argument in a shell command (e.g., `python -c "..."`). Instead, write the code to a `.py` file and execute that file. This avoids permission-check issues and is easier to debug and test.
 
 ## Output Files
 

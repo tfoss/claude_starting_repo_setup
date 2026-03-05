@@ -33,6 +33,7 @@
       "Bash(python3 *)",
       "Bash(pip *)",
       "Bash(pip3 *)",
+      "Bash(conda *)",
       "Bash(uv *)",
       "Bash(node *)",
       "Bash(npm *)",
