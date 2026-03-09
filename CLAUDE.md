@@ -49,6 +49,8 @@ These rules override any conflicting defaults. Follow them exactly:
 - Update bead status as work progresses.
 - The `.beads` directory is in the repo root. If `bd` cannot find it, run `bd init` first.
 - Use `bd list`, `bd show`, `bd create`, etc. — always use `bd`, not `beads`.
+- If `bd` is not installed (common in Docker), install it: `npm install -g @beads/bd`
+- If `bd` fails because dolt is missing, install dolt: `sudo bash -c "curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash"`
 
 ## Environment
 

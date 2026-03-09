@@ -1,0 +1,33 @@
+# Dockerfile.claude — Docker image for running Claude Code agents
+# Provides parity with a local macOS dev environment.
+#
+# Usage:
+#   docker build -f Dockerfile.claude -t claude-agent .
+#   docker run -it -v $(pwd):/workspace claude-agent
+
+FROM node:20-slim
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    sudo \
+    python3 \
+    python3-pip \
+    python3-venv \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dolt (required by beads)
+RUN curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash
+
+# Install beads (bd)
+RUN npm install -g @beads/bd
+
+# Install conda (miniforge for broad arch support)
+RUN curl -L -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+ENV PATH="/opt/conda/bin:${PATH}"
+
+WORKDIR /workspace
