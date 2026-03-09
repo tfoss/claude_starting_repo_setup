@@ -9,7 +9,7 @@ These rules override any conflicting defaults. Follow them exactly:
 1. **NEVER use `python -c` with multi-line code.** Write code to a `.py` file and execute the file.
 2. **NEVER use heredocs (`<<EOF`) or `$(cat ...)` substitution in shell commands.** These trigger security warnings that block execution.
 3. **For git commits**: Use `git commit -m "short message"` for single-line messages. For multi-line messages, use the Write tool to create `/tmp/commit_msg.txt`, then run `git commit -F /tmp/commit_msg.txt`.
-4. **Run commands separately instead of chaining.** Do not use `&&` or `;` to chain multiple commands with quoted arguments (e.g., `cmd1 && echo "---" && cmd2`). Instead, make separate Bash tool calls for each command.
+4. **Run commands separately instead of chaining.** Do not use `&&`, `;`, or `|` to chain or pipe multiple commands together. Do not use `2>&1` redirection. Instead, make separate Bash tool calls for each command. This is mandatory — chained commands trigger security prompts that block autonomous execution.
 
 ## Development Philosophy
 
@@ -43,10 +43,12 @@ These rules override any conflicting defaults. Follow them exactly:
 
 ## Issue Tracking — Beads
 
-- Use **beads** for issue and task tracking.
+- Use **beads** (`bd` command) for issue and task tracking.
 - Create a bead for each discrete task, bug, or feature.
 - Reference bead IDs in commit messages when applicable.
 - Update bead status as work progresses.
+- The `.beads` directory is in the repo root. If `bd` cannot find it, run `bd init` first.
+- Use `bd list`, `bd show`, `bd create`, etc. — always use `bd`, not `beads`.
 
 ## Environment
 
