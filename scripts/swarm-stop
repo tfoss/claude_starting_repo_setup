@@ -1,0 +1,99 @@
+#!/bin/bash
+# swarm-stop — Stop a running swarm and clean up worktrees.
+#
+# Usage:
+#   swarm-stop <project-dir> [--keep-branches]
+#
+# This will:
+#   1. Kill the tmux session
+#   2. Remove worker worktrees
+#   3. Optionally delete worker branches (default: delete them)
+
+set -euo pipefail
+
+KEEP_BRANCHES=false
+
+usage() {
+    echo "Usage: swarm-stop <project-dir> [--keep-branches]"
+    echo ""
+    echo "Stops the swarm and cleans up worktrees."
+    echo ""
+    echo "Options:"
+    echo "  --keep-branches   Keep worker branches after cleanup"
+    echo "  --help            Show this help"
+    exit 1
+}
+
+if [ $# -lt 1 ]; then
+    usage
+fi
+
+PROJECT_DIR="$(cd "$1" && pwd)"
+shift
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --keep-branches)
+            KEEP_BRANCHES=true
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+SESSION="swarm-${PROJECT_NAME}"
+
+# --- Kill tmux session ---
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "Killing tmux session: $SESSION"
+    tmux kill-session -t "$SESSION"
+else
+    echo "No tmux session found: $SESSION"
+fi
+
+# --- Clean up worktrees ---
+
+echo "Cleaning up worktrees..."
+
+# List all worktrees and find worker ones
+git -C "$PROJECT_DIR" worktree list --porcelain 2>/dev/null | while read -r line; do
+    case "$line" in
+        "worktree "*)
+            wt_path="${line#worktree }"
+            ;;
+        "branch refs/heads/worker-"*)
+            branch="${line#branch refs/heads/}"
+            if [ -n "${wt_path:-}" ]; then
+                echo "  Removing worktree: $wt_path (branch: $branch)"
+                git -C "$PROJECT_DIR" worktree remove "$wt_path" --force 2>/dev/null || true
+
+                if [ "$KEEP_BRANCHES" = false ]; then
+                    git -C "$PROJECT_DIR" branch -D "$branch" 2>/dev/null || true
+                fi
+            fi
+            wt_path=""
+            ;;
+    esac
+done
+
+# Prune any stale worktree references
+git -C "$PROJECT_DIR" worktree prune 2>/dev/null || true
+
+echo ""
+echo "Remaining worktrees:"
+git -C "$PROJECT_DIR" worktree list
+echo ""
+
+if [ "$KEEP_BRANCHES" = true ]; then
+    echo "Worker branches preserved. Merge or delete them manually."
+else
+    echo "Cleanup complete."
+fi

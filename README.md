@@ -5,16 +5,38 @@ A template repository with sensible defaults for developing projects with Claude
 ## What's Included
 
 - **`CLAUDE.md`** — Development guidelines that Claude Code follows: highly functionalized code, thorough testing, composable architecture, documentation standards, git workflow, and beads-based issue tracking.
-- **`.claude/settings.json`** — Permission configuration enabling largely autonomous agent workflows while blocking dangerous destructive operations.
+- **`AGENTS.md`** — Multi-agent coordination protocol: lead/worker roles, BV-driven triage, Agent Mail messaging and file reservations, DCG safety rules.
+- **`.claude/settings.json`** — Permission configuration with DCG PreToolUse hook, granular allow list, and deny list for destructive operations.
 - **`Dockerfile.claude`** — Docker image for running Claude Code agents with full tool parity (br/beads, conda, Python, Node).
+- **`scripts/`** — Swarm lifecycle scripts: `swarm-init`, `swarm-start`, `swarm-stop`.
 - **`.gitignore`** — Comprehensive ignore file covering common languages and tools.
 
-## Usage
+## Quick Start — Single Agent
 
 1. Use this repo as a template or fork it for your new project.
-2. Customize `CLAUDE.md` with project-specific conventions (language, framework, etc.).
+2. Customize `PROJECT.md` with your project details and `CLAUDE.md` with language/framework specifics.
 3. Adjust `.claude/settings.json` permissions as needed for your stack.
 4. Start building with Claude Code — it will follow the guidelines automatically.
+
+## Quick Start — Agent Swarm
+
+Prerequisites: `tmux`, `claude`, `br`, `bv`, Agent Mail MCP server.
+
+```bash
+# Create a new project from this template
+scripts/swarm-init my-app
+
+# Edit PROJECT.md and CLAUDE.md, then:
+scripts/swarm-start ~/code/my-app --workers 3
+
+# View the swarm
+tmux attach -t swarm-my-app
+
+# Stop and clean up
+scripts/swarm-stop ~/code/my-app
+```
+
+The swarm launches a **lead agent** (triages with `bv`, assigns work via Agent Mail) and **N worker agents** (each in its own git worktree and tmux pane). See `AGENTS.md` for the full coordination protocol.
 
 ## Docker
 
