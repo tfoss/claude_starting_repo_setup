@@ -106,7 +106,8 @@ if command -v gh &>/dev/null; then
     fi
 
     echo "Creating GitHub repo: $PROJECT_NAME ($VISIBILITY)"
-    gh repo create "$PROJECT_NAME" $VISIBILITY --source="$PROJECT_DIR" --push
+    gh repo create "$PROJECT_NAME" $VISIBILITY --source="$PROJECT_DIR"
+    git -C "$PROJECT_DIR" push -u origin main
     echo "Remote set and pushed."
 else
     echo "WARNING: gh not found. Create the remote manually:"
