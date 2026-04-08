@@ -279,26 +279,37 @@ POLLING LOOP (when waiting for work):
 - Also run br ready to see if tasks are available to self-claim
 - Keep polling — do NOT give up or exit. The lead agent will assign work to you.
 
-WORK PROTOCOL:
-- When you receive a task via Agent Mail:
-  1. Claim it: br update <id> --status=in_progress
-  2. Reserve files: file_reservation_paths with exclusive=true
-  3. Implement the task in your worktree branch
-  4. Write tests
-  5. Run tests and make sure they pass
-  6. Release file reservations
-  7. br close <id>
-  8. br sync --flush-only
-  9. git add, commit (reference bead ID in message), and push
-  10. Send completion message via Agent Mail to the lead agent — include what you built and bead ID
-  11. Check fetch_inbox for next assignment
+WORK PROTOCOL — when you receive a task via Agent Mail:
+1. Pull latest from main: git pull origin main (to get latest beads and code)
+2. Run br sync --import-only to load latest beads into your local DB
+3. Claim it: br update <id> --status=in_progress
+4. Reserve files: file_reservation_paths with exclusive=true
+5. Implement the task in your worktree branch
+6. Write tests
+7. Run tests and make sure they pass
+8. Release file reservations
+9. br close <id>
+10. br sync --flush-only
+11. git add, commit (reference bead ID in message), and push
+12. Send completion message via Agent Mail to the lead agent — include what you built and bead ID
+13. IMMEDIATELY go back to the POLLING LOOP below — do NOT stop
+
+AFTER-TASK POLLING LOOP (YOU MUST DO THIS — NEVER STOP):
+After completing a task or sending a completion message, enter this loop:
+1. Sleep 30 seconds
+2. Check fetch_inbox for new assignments
+3. Run br ready to see if tasks are available to self-claim
+4. If you have work, start the WORK PROTOCOL above
+5. If no work yet, go back to step 1
+NEVER exit this loop. NEVER stop and wait for user input. NEVER say "standing by" and stop.
+Keep polling until you receive work or the session is killed.
 
 IMPORTANT:
 - You are in a git worktree — your branch is $WORKER_NAME
 - Do NOT merge to main — the lead agent handles merges
 - Always reserve files before editing and release when done
 - If you hit a blocker, message the lead agent immediately via Agent Mail
-- Do NOT exit or stop — keep polling for work after completing each task
+- Pull from main before each new task to get latest beads and merged code
 WORKEREOF
 
     echo "  Starting $WORKER_NAME (staggered ${i}0s delay)..."
