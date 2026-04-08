@@ -232,24 +232,42 @@ After assigning work, enter this loop and NEVER stop or wait for user input:
 
 1. Sleep 60 seconds
 2. Check fetch_inbox for worker messages
-3. If a worker reports completion:
-   a. Merge their branch (see MERGE WORKFLOW below)
-   b. Run bv --robot-triage to re-rank remaining work
-   c. Assign newly unblocked tasks to idle workers via send_message
-4. If no completions, check bv --robot-alerts for blockers
+3. If a worker says they created a PR:
+   a. REVIEW the PR (see REVIEW WORKFLOW below)
+   b. If approved, merge it (see MERGE WORKFLOW below)
+   c. If changes needed, send feedback via Agent Mail — be specific about what to fix
+   d. Run bv --robot-triage to re-rank remaining work
+   e. Assign newly unblocked tasks to idle workers via send_message
+4. If no messages, check bv --robot-alerts for blockers
 5. Go back to step 1
 
 NEVER stop this loop. NEVER wait for the user to tell you what to do.
 If all tasks are complete, create new beads for the next phase of work and assign them.
 If all work is truly done, send a final summary message to all workers and the user.
 
-MERGE WORKFLOW:
-1. git fetch origin
-2. git merge origin/worker-N (for the worker's branch)
-3. Resolve any conflicts
+REVIEW WORKFLOW (do this for EVERY PR before merging):
+1. gh pr diff <PR-number> — read the full diff
+2. Check for:
+   - Does the code match what was requested in the bead?
+   - Are there tests? Do they cover the key functionality?
+   - Any obvious bugs, security issues, or missing error handling?
+   - Does it follow the project's code style (see CLAUDE.md)?
+   - Are there any files that shouldn't have been modified?
+3. If issues found:
+   - gh pr review <PR-number> --request-changes --body "specific feedback"
+   - Send Agent Mail message to the worker with what to fix
+   - Do NOT merge — wait for the worker to push fixes
+4. If the PR looks good:
+   - gh pr review <PR-number> --approve --body "brief summary of what looks good"
+   - Proceed to MERGE WORKFLOW
+
+MERGE WORKFLOW (only after PR is approved):
+1. gh pr merge <PR-number> --merge
+2. git pull origin main
+3. br sync --import-only
 4. br sync --flush-only
-5. git push
-6. Notify the worker via send_message that their branch was merged
+5. git push (if beads changed)
+6. Notify the worker via send_message that their PR was merged
 LEADEOF
 
 # Create the tmux session with the lead agent in the first pane
@@ -284,15 +302,24 @@ WORK PROTOCOL — when you receive a task via Agent Mail:
 2. Run br sync --import-only to load latest beads into your local DB
 3. Claim it: br update <id> --status=in_progress
 4. Reserve files: file_reservation_paths with exclusive=true
-5. Implement the task in your worktree branch
-6. Write tests
-7. Run tests and make sure they pass
-8. Release file reservations
-9. br close <id>
-10. br sync --flush-only
-11. git add, commit (reference bead ID in message), and push
-12. Send completion message via Agent Mail to the lead agent — include what you built and bead ID
-13. IMMEDIATELY go back to the POLLING LOOP below — do NOT stop
+5. Create a feature branch from your worktree: git checkout -b feature/<bead-id>-<short-description>
+6. Implement the task
+7. Write tests
+8. Run tests and make sure they pass
+9. Release file reservations
+10. br close <id>
+11. br sync --flush-only
+12. git add, commit (reference bead ID in message), and push: git push -u origin feature/<bead-id>-<short-description>
+13. Create a PR: gh pr create --title "<bead-id>: short description" --body "## Summary\n- what you built\n- bead ID\n\n## Tests\n- what tests were added"
+14. Send completion message via Agent Mail to the lead agent — include the PR number/URL and bead ID
+15. IMMEDIATELY go back to the POLLING LOOP below — do NOT stop
+
+IF THE LEAD REQUESTS CHANGES on your PR:
+1. Check fetch_inbox for the feedback
+2. Make the requested fixes on your feature branch
+3. Commit, push
+4. Reply via Agent Mail that fixes are pushed
+5. Go back to the POLLING LOOP while waiting for re-review
 
 AFTER-TASK POLLING LOOP (YOU MUST DO THIS — NEVER STOP):
 After completing a task or sending a completion message, enter this loop:

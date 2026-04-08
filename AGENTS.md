@@ -231,9 +231,26 @@ Use Agent Mail for all inter-agent communication:
 3. Close the bead: `br close <id>`
 4. Sync beads to JSONL: `br sync --flush-only`
 5. Commit everything (code + `.beads/` changes).
-6. Push your branch.
-7. Send a completion message via Agent Mail.
-8. Check `br ready` for the next available task.
+6. Push your feature branch.
+7. Create a PR: `gh pr create --title "<bead-id>: description" --body "summary of changes"`
+8. Send a completion message via Agent Mail to the lead agent — include the **PR number/URL** and bead ID.
+9. Wait for the lead agent to review and merge (check `fetch_inbox` for feedback).
+10. If the lead requests changes, fix them, push, and notify via Agent Mail.
+11. Once merged, check `br ready` for the next available task.
+
+## Code Review (Lead Agent)
+
+All worker PRs must be reviewed before merging. The lead agent:
+
+1. **Reads the diff:** `gh pr diff <PR-number>`
+2. **Checks for:**
+   - Does the code match what was requested in the bead?
+   - Are there tests covering the key functionality?
+   - Any obvious bugs, security issues, or missing error handling?
+   - Does it follow the project's code style (see CLAUDE.md)?
+   - Are there files that shouldn't have been modified?
+3. **If issues found:** `gh pr review <PR-number> --request-changes --body "feedback"` and notify the worker via Agent Mail with specific fixes needed.
+4. **If approved:** `gh pr review <PR-number> --approve` then `gh pr merge <PR-number> --merge`
 
 ## Session End Checklist
 
