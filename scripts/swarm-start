@@ -184,12 +184,17 @@ if [ -n "$WORKER_MODEL" ]; then
     MODEL_FLAG="--model $WORKER_MODEL"
 fi
 
-# Read the lead agent prompt
-LEAD_PROMPT="You are the lead agent for the $PROJECT_NAME project.
+# --- Write prompt files ---
+# Using files avoids shell escaping nightmares and lets agents re-read them.
 
+PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
+mkdir -p "$PROMPT_DIR"
+
+cat > "$PROMPT_DIR/lead-system.txt" <<LEADEOF
+You are the lead agent for the $PROJECT_NAME project.
 Your job is to plan and coordinate work across $WORKERS worker agents.
 
-STARTUP PROTOCOL:
+STARTUP PROTOCOL (do this NOW, step by step):
 1. Read PROJECT.md to understand the project
 2. Read AGENTS.md for coordination rules
 3. Call macro_start_session to register with Agent Mail
@@ -197,11 +202,10 @@ STARTUP PROTOCOL:
 5. Run br ready to see existing work
 6. Run bv --robot-triage to get ranked recommendations (if beads exist)
 7. If no beads exist yet, analyze PROJECT.md and create initial beads with br create
+8. Run bv --robot-plan to identify parallel execution tracks
+9. Assign tasks to worker agents via Agent Mail send_message — include bead ID, expected files, and context
 
 ONGOING PROTOCOL:
-- Use bv --robot-plan to identify parallel execution tracks
-- Assign tasks to workers via Agent Mail send_message
-- Include: bead ID, expected files to touch, any context or dependencies
 - Monitor progress via fetch_inbox and bv --robot-alerts
 - When workers complete tasks, review and merge their branches
 - Re-triage after each completion cycle with bv --robot-triage
@@ -210,28 +214,33 @@ ONGOING PROTOCOL:
 IMPORTANT:
 - Workers are in separate worktrees on their own branches
 - Coordinate merges — do not let workers merge to main themselves
-- Use bv --robot-insights | jq '.Cycles' if you suspect dependency cycles
-- Sync beads before and after coordination: br sync --flush-only"
+- Sync beads before and after coordination: br sync --flush-only
+LEADEOF
 
 # Create the tmux session with the lead agent in the first pane
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --dangerously-skip-permissions -p '$(echo "$LEAD_PROMPT" | sed "s/'/'\\\\''/g")'" Enter
+tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --dangerously-skip-permissions --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
+# Wait for claude to start, then send the initial prompt
+sleep 3
+tmux send-keys -t "$SESSION" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, and assign work to the worker agents." Enter
 
 # Stagger worker starts to avoid thundering herd
 for i in $(seq 1 "$WORKERS"); do
     WORKER_NAME="worker-$i"
 
-    # Build the worker prompt
-    WORKER_PROMPT="You are worker agent $WORKER_NAME for the $PROJECT_NAME project.
+    cat > "$PROMPT_DIR/${WORKER_NAME}-system.txt" <<WORKEREOF
+You are worker agent $WORKER_NAME for the $PROJECT_NAME project.
 
-STARTUP PROTOCOL:
+STARTUP PROTOCOL (do this NOW, step by step):
 1. Read AGENTS.md for coordination rules
 2. Call macro_start_session to register with Agent Mail
 3. Check fetch_inbox for task assignments from the lead agent
 4. Run br ready to see available work
+5. If you have a task assignment, claim it and start working
+6. If no tasks yet, wait 60 seconds then check fetch_inbox and br ready again — repeat until you get work
 
 WORK PROTOCOL:
-- When you receive a task assignment via Agent Mail, claim it: br update <id> --status=in_progress
+- When you receive a task, claim it: br update <id> --status=in_progress
 - Reserve files before editing: file_reservation_paths with exclusive=true
 - Work on the task in your worktree branch
 - Run tests before committing
@@ -243,13 +252,17 @@ IMPORTANT:
 - You are in a git worktree — your branch is $WORKER_NAME
 - Do NOT merge to main — the lead agent handles merges
 - Always reserve files before editing and release when done
-- Communicate blockers immediately via Agent Mail"
+- Communicate blockers immediately via Agent Mail
+WORKEREOF
 
     echo "  Starting $WORKER_NAME (staggered ${i}0s delay)..."
 
     # Create a new tmux pane for this worker
     tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
-    tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' --dangerously-skip-permissions $MODEL_FLAG -p '$(echo "$WORKER_PROMPT" | sed "s/'/'\\\\''/g")'" Enter
+    tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' --dangerously-skip-permissions $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
+    # Staggered: send initial prompt after claude starts (delay + 5s for startup)
+    DELAY=$(( i * 10 + 5 ))
+    (sleep "$DELAY" && tmux send-keys -t "$SESSION:0.$i" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter) &
 
     # Re-layout panes evenly after each addition
     tmux select-layout -t "$SESSION" tiled
