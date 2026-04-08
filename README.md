@@ -8,7 +8,7 @@ A template repository with sensible defaults for developing projects with Claude
 - **`AGENTS.md`** — Multi-agent coordination protocol: lead/worker roles, BV-driven triage, Agent Mail messaging and file reservations, DCG safety rules.
 - **`.claude/settings.json`** — Permission configuration with DCG PreToolUse hook, granular allow list, and deny list for destructive operations.
 - **`Dockerfile.claude`** — Docker image for running Claude Code agents with full tool parity (br/beads, conda, Python, Node).
-- **`scripts/`** — Swarm lifecycle scripts: `swarm-init`, `swarm-start`, `swarm-stop`.
+- **`scripts/`** — Swarm lifecycle scripts: `swarm-init`, `swarm-start`, `swarm-kill`.
 - **`.gitignore`** — Comprehensive ignore file covering common languages and tools.
 
 ## Quick Start — Single Agent
@@ -33,7 +33,7 @@ scripts/swarm-start ~/code/my-app --workers 3
 tmux attach -t swarm-my-app
 
 # Stop and clean up
-scripts/swarm-stop ~/code/my-app
+scripts/swarm-kill ~/code/my-app
 ```
 
 The swarm launches a **lead agent** (triages with `bv`, assigns work via Agent Mail) and **N worker agents** (each in its own git worktree and tmux pane). See `AGENTS.md` for the full coordination protocol.
