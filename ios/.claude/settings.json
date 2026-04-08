@@ -24,7 +24,8 @@
       "WebFetch",
       "WebSearch",
       "TodoWrite",
-      "Agent"
+      "Agent",
+      "mcp__mcp-agent-mail__*"
     ],
     "deny": [
       "Bash(rm -rf /)",
