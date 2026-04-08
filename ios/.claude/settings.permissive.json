@@ -1,17 +1,4 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "dcg"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "allow": [
       "Bash(*)",
@@ -50,8 +37,6 @@
       "Bash(git reset --hard origin/*)",
       "Bash(git clean -fd *)",
       "Bash(git checkout -- .)",
-      "Bash(docker system prune -a --force)",
-      "Bash(docker rm -f $(docker ps -aq))",
       "Bash(pkill -9 *)",
       "Bash(killall *)",
       "Bash(shutdown *)",

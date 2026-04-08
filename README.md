@@ -230,8 +230,8 @@ Three layers of protection:
 
 **1. DCG (Destructive Command Guard):** A PreToolUse hook that intercepts every Bash command before execution. Blocks destructive filesystem and git operations with sub-millisecond overhead using SIMD-accelerated pattern matching. Configured in `.claude/settings.json` under `hooks`. Install: `curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh" | bash -s -- --easy-mode`
 
-**2. Permission allow/deny lists:** Granular allow list — specific commands are pre-approved, everything else prompts. A deny list blocks recursive force-deletes, force-pushing to main/master, disk-wiping commands, and system shutdown.
+**2. Permission allow/deny lists:** Broad `Bash(*)` allow — DCG is the safety net, not the allow list. A deny list explicitly blocks recursive force-deletes, force-pushing to main/master, disk-wiping commands, and system shutdown. A granular alternative (`settings.granular.json`) is included if you prefer explicit per-command approval.
 
 **3. Agent Mail pre-commit guard:** Optional git hook (`install_precommit_guard`) that blocks commits touching files reserved by other agents. Prevents multi-agent file conflicts at commit time.
 
-For Docker environments, use `settings.permissive.json` with broad `Bash(*)` allow — the container is already sandboxed, and DCG provides the command-level safety net.
+A granular alternative (`settings.granular.json`) is included for environments where you want explicit per-command approval instead of relying on DCG. To use it, rename it to `settings.json`.
