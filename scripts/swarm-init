@@ -105,9 +105,17 @@ if command -v gh &>/dev/null; then
         VISIBILITY="--public"
     fi
 
-    echo "Creating GitHub repo: $PROJECT_NAME ($VISIBILITY)"
-    gh repo create "$PROJECT_NAME" $VISIBILITY --source="$PROJECT_DIR"
-    git -C "$PROJECT_DIR" push -u origin main
+    # Check if repo already exists on GitHub
+    if gh repo view "$PROJECT_NAME" &>/dev/null; then
+        echo "GitHub repo $PROJECT_NAME already exists. Setting remote and pushing..."
+        REPO_URL=$(gh repo view "$PROJECT_NAME" --json url --jq '.url')
+        git -C "$PROJECT_DIR" remote add origin "${REPO_URL}.git" 2>/dev/null || true
+        git -C "$PROJECT_DIR" push -u origin main --force
+    else
+        echo "Creating GitHub repo: $PROJECT_NAME ($VISIBILITY)"
+        gh repo create "$PROJECT_NAME" $VISIBILITY --source="$PROJECT_DIR"
+        git -C "$PROJECT_DIR" push -u origin main
+    fi
     echo "Remote set and pushed."
 else
     echo "WARNING: gh not found. Create the remote manually:"

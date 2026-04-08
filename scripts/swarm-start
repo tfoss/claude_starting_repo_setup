@@ -219,9 +219,9 @@ LEADEOF
 
 # Create the tmux session with the lead agent in the first pane
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --dangerously-skip-permissions --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
+tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
 # Wait for claude to start, then send the initial prompt
-sleep 3
+sleep 8
 tmux send-keys -t "$SESSION" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, and assign work to the worker agents." Enter
 
 # Stagger worker starts to avoid thundering herd
@@ -259,9 +259,9 @@ WORKEREOF
 
     # Create a new tmux pane for this worker
     tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
-    tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' --dangerously-skip-permissions $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
-    # Staggered: send initial prompt after claude starts (delay + 5s for startup)
-    DELAY=$(( i * 10 + 5 ))
+    tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
+    # Staggered: send initial prompt after claude starts (sleep delay + 10s for worktree + startup)
+    DELAY=$(( i * 10 + 15 ))
     (sleep "$DELAY" && tmux send-keys -t "$SESSION:0.$i" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter) &
 
     # Re-layout panes evenly after each addition
