@@ -38,3 +38,13 @@ redirect
 
 # bv (beads viewer) lock file
 .bv.lock
+
+# Recovery backups
+.br_recovery/
+
+# Dolt artifacts (legacy — not used by br)
+dolt/
+dolt-server.*
+.bd-dolt-ok
+.dolt/
+.doltcfg/
