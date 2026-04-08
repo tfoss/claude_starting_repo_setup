@@ -9,7 +9,13 @@ These rules override any conflicting defaults. Follow them exactly:
 1. **NEVER use `python -c` with multi-line code.** Write code to a `.py` file and execute the file.
 2. **NEVER use heredocs (`<<EOF`) or `$(cat ...)` substitution in shell commands.** These trigger security warnings that block execution.
 3. **For git commits**: Use `git commit -m "short message"` for single-line messages. For multi-line messages, use the Write tool to create `/tmp/commit_msg.txt`, then run `git commit -F /tmp/commit_msg.txt`.
-4. **Run commands separately instead of chaining.** Do not use `&&`, `;`, or `|` to chain or pipe multiple commands together. Do not use `2>&1` redirection. Instead, make separate Bash tool calls for each command. This is mandatory — chained commands trigger security prompts that block autonomous execution.
+4. **NEVER chain or combine commands.** Each Bash tool call must be a single, simple command. Forbidden patterns:
+   - `&&` `||` `;` (chaining)
+   - `|` (piping)
+   - `2>&1` `2>/dev/null` `>/dev/null` (redirection)
+   - `$()` or backticks (command substitution)
+
+   Instead, make separate Bash tool calls for each command. **This is the #1 cause of permission prompts** — compound commands never match allow patterns and will always block.
 
 ## Development Philosophy
 
@@ -41,16 +47,23 @@ These rules override any conflicting defaults. Follow them exactly:
 - Use **feature branches** for new work. Branch from `main`.
 - Branch naming: `feature/<description>`, `fix/<description>`, `refactor/<description>`.
 
-## Issue Tracking — Beads
+## Issue Tracking — Beads (br)
 
-- Use **beads** (`bd` command) for issue and task tracking.
+"Beads" is the issue/task tracker for this project. The CLI command is `br` (beads_rust). When someone says "beads", "issues", or "tasks", they mean `br`. To see all issues, run `br list`. To see ready work, run `br ready`.
+
 - Create a bead for each discrete task, bug, or feature.
 - Reference bead IDs in commit messages when applicable.
 - Update bead status as work progresses.
-- The `.beads` directory is in the repo root. If `bd` cannot find it, run `bd init` first.
-- Use `bd list`, `bd show`, `bd create`, etc. — always use `bd`, not `beads`.
-- If `bd` is not installed (common in Docker), install it: `npm install -g @beads/bd`
-- If `bd` fails because dolt is missing, install dolt: `sudo bash -c "curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash"`
+- The `.beads` directory is in the repo root. If `br` cannot find it, run `br init` first.
+- Use `br list`, `br show`, `br create`, etc. — always use `br`, not `beads` or `bd`.
+- **`br create` syntax**: The title is a **positional argument**, NOT a `-t` flag. `-t` sets the issue **type** (bug/feature/task). Correct usage:
+  - `br create "My issue title"` — title is the first positional arg
+  - `br create "My title" -d "Description here"` — with description
+  - `br create "My title" -t feature -d "Description"` — with type and description
+  - **WRONG**: `br create -t "My title"` — this sets type to "My title", not the title
+- **Syncing**: `br` uses SQLite locally and JSONL (`.beads/issues.jsonl`) for git-portable storage. After making changes, run `br sync --flush-only` to export to JSONL, then commit the `.beads/` directory. After pulling, run `br sync --import-only` to update your local DB.
+- If `br` is not installed, install it: `curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash`
+- **No external dependencies** — `br` is a self-contained binary. No dolt server, no database server. Works the same locally and in Docker.
 
 ## Environment
 

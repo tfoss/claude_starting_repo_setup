@@ -3,11 +3,17 @@
 #
 # Usage:
 #   docker build -f Dockerfile.claude -t claude-agent .
-#   docker run -it -v $(pwd):/workspace claude-agent
+#   docker run -it -d \
+#     -v ~/code/my-project:/workspace \
+#     -v $HOME/.claude-docker:/home/claude-user/.claude \
+#     -v $HOME/.claude-docker/.claude.json:/home/claude-user/.claude.json \
+#     -v $HOME/.gh-docker:/home/claude-user/.config/gh \
+#     --name agent-myproject \
+#     claude-agent
 
 FROM node:20-slim
 
-# System dependencies
+# System dependencies + GitHub CLI
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -16,13 +22,18 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     jq \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dolt (required by beads)
-RUN curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash
+# Install Claude Code
+RUN npm install -g @anthropic-ai/claude-code
 
-# Install beads (bd)
-RUN npm install -g @beads/bd
+# Install beads_rust (br) — self-contained binary, no dolt/database server needed
+RUN curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash
 
 # Install conda (miniforge for broad arch support)
 RUN curl -L -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh \
@@ -30,4 +41,14 @@ RUN curl -L -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releas
     && rm /tmp/miniforge.sh
 ENV PATH="/opt/conda/bin:${PATH}"
 
+# Create non-root user (Claude Code refuses to run as root)
+RUN useradd -m -s /bin/bash claude-user \
+    && echo "claude-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Entrypoint: configure git credentials from mounted gh config
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+
+USER claude-user
 WORKDIR /workspace
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["bash"]
