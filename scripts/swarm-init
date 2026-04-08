@@ -15,6 +15,7 @@ TEMPLATE_REPO="$HOME/code/claude_starting_repo_setup"
 CODE_DIR="$HOME/code"
 WORKERS=2
 START=false
+PUBLIC=false
 
 usage() {
     echo "Usage: swarm-init <project-name> [--workers N] [--start]"
@@ -24,6 +25,7 @@ usage() {
     echo "Options:"
     echo "  --workers N   Number of worker agents (default: 2)"
     echo "  --start       Launch the swarm immediately after creation"
+    echo "  --public      Create a public GitHub repo (default: private)"
     echo "  --help        Show this help"
     exit 1
 }
@@ -43,6 +45,10 @@ while [ $# -gt 0 ]; do
             ;;
         --start)
             START=true
+            shift
+            ;;
+        --public)
+            PUBLIC=true
             shift
             ;;
         --help)
@@ -91,10 +97,20 @@ if [ ! -f ".beads/metadata.json" ]; then
     git commit -m "Initialize beads workspace"
 fi
 
-# Install Agent Mail pre-commit guard
-if command -v claude &>/dev/null; then
-    echo "Installing Agent Mail pre-commit guard..."
-    # This will be done by the lead agent on first session via macro_start_session
+# --- Create GitHub repo ---
+
+if command -v gh &>/dev/null; then
+    VISIBILITY="--private"
+    if [ "$PUBLIC" = true ]; then
+        VISIBILITY="--public"
+    fi
+
+    echo "Creating GitHub repo: $PROJECT_NAME ($VISIBILITY)"
+    gh repo create "$PROJECT_NAME" $VISIBILITY --source="$PROJECT_DIR" --push
+    echo "Remote set and pushed."
+else
+    echo "WARNING: gh not found. Create the remote manually:"
+    echo "  gh repo create $PROJECT_NAME --private --source=$PROJECT_DIR --push"
 fi
 
 echo ""
@@ -103,8 +119,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit $PROJECT_DIR/PROJECT.md with your project details"
 echo "  2. Edit $PROJECT_DIR/CLAUDE.md to customize language/framework specifics"
-echo "  3. Create a remote: gh repo create $PROJECT_NAME --private --source=$PROJECT_DIR"
-echo "  4. Launch the swarm: swarm-start $PROJECT_DIR --workers $WORKERS"
+echo "  3. Launch the swarm: swarm-start $PROJECT_DIR --workers $WORKERS"
 echo ""
 
 if [ "$START" = true ]; then
