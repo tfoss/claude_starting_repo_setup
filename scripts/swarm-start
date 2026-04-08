@@ -227,12 +227,21 @@ STARTUP PROTOCOL (do this NOW, step by step):
    - Include: bead ID, what to build, which files/directories to touch
    - Workers will claim the bead themselves after receiving the assignment
 
-ONGOING PROTOCOL (after initial assignment):
-- Wait for workers to send completion messages via Agent Mail (check fetch_inbox every 2-3 minutes)
-- When a worker completes a task: merge their branch into main, run br sync --import-only, then re-triage
-- Assign newly unblocked tasks to idle workers
-- Create new beads if you discover additional work needed
-- Run bv --robot-alerts periodically to catch blockers
+ONGOING PROTOCOL (after initial assignment — YOU MUST LOOP FOREVER):
+After assigning work, enter this loop and NEVER stop or wait for user input:
+
+1. Sleep 60 seconds
+2. Check fetch_inbox for worker messages
+3. If a worker reports completion:
+   a. Merge their branch (see MERGE WORKFLOW below)
+   b. Run bv --robot-triage to re-rank remaining work
+   c. Assign newly unblocked tasks to idle workers via send_message
+4. If no completions, check bv --robot-alerts for blockers
+5. Go back to step 1
+
+NEVER stop this loop. NEVER wait for the user to tell you what to do.
+If all tasks are complete, create new beads for the next phase of work and assign them.
+If all work is truly done, send a final summary message to all workers and the user.
 
 MERGE WORKFLOW:
 1. git fetch origin
