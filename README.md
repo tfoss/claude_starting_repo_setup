@@ -204,10 +204,12 @@ Check both with `br --version`. If they drift, rebuild the Docker image.
 
 ## Permissions Philosophy
 
-Two-tier approach:
+Three layers of protection:
 
-**Local (project `.claude/settings.json`):** Granular allow list — specific commands are pre-approved, everything else prompts. This gives you control when running Claude directly on your machine.
+**1. DCG (Destructive Command Guard):** A PreToolUse hook that intercepts every Bash command before execution. Blocks destructive filesystem and git operations with sub-millisecond overhead using SIMD-accelerated pattern matching. Configured in `.claude/settings.json` under `hooks`. Install: `curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh" | bash -s -- --easy-mode`
 
-**Docker (user `~/.claude-docker/settings.json`):** Broad `Bash(*)` allow — the container is already sandboxed, so the agent runs autonomously without permission prompts. A deny list still blocks destructive operations.
+**2. Permission allow/deny lists:** Granular allow list — specific commands are pre-approved, everything else prompts. A deny list blocks recursive force-deletes, force-pushing to main/master, disk-wiping commands, and system shutdown.
 
-**Deny list (both tiers):** Recursive force-deletes of critical paths, force-pushing to main/master, disk-wiping commands, and system shutdown.
+**3. Agent Mail pre-commit guard:** Optional git hook (`install_precommit_guard`) that blocks commits touching files reserved by other agents. Prevents multi-agent file conflicts at commit time.
+
+For Docker environments, use `settings.permissive.json` with broad `Bash(*)` allow — the container is already sandboxed, and DCG provides the command-level safety net.

@@ -158,6 +158,37 @@ Common pitfalls:
 
 ---
 
+## Safety: Destructive Command Guard (DCG)
+
+All agents in this project run behind DCG, a PreToolUse hook that intercepts every Bash command and blocks destructive operations before they execute. DCG is configured in `.claude/settings.json` and fires automatically — agents do not need to invoke it.
+
+### What DCG protects against
+- Recursive force-deletes (`rm -rf /`, `rm -rf .git`, etc.)
+- Destructive git operations (`git reset --hard`, `git push --force`, `git clean -fd`)
+- Dangerous filesystem operations (disk writes, permission clobbering)
+- Inline script attacks (heredocs, `python -c "os.remove(...)"`)
+
+### What agents need to know
+- **DCG is transparent.** Safe commands pass through with sub-millisecond overhead. You will only notice it when it blocks something.
+- **If DCG blocks your command**, do not try to work around it. The command was blocked for a reason. Find an alternative approach:
+  - Instead of `rm -rf dir/`, remove specific files or use `git clean` on untracked files only.
+  - Instead of `git reset --hard`, use `git stash` or `git checkout <file>`.
+  - Instead of `git push --force`, use `git push --force-with-lease`.
+- **Do not disable or bypass DCG.** The `DCG_BYPASS` env var and `dcg allow-once` exist for human operators, not agents.
+- **Additional security packs** can be enabled in `~/.config/dcg/config.toml` for database, cloud, Kubernetes, and other tooling protection.
+
+### Enabled packs (default)
+- `core.filesystem` — blocks destructive file operations
+- `core.git` — blocks destructive git operations
+
+### Testing a command (lead agent / debug only)
+```bash
+dcg test "rm -rf node_modules"    # Check if a command would be blocked
+dcg explain "git reset --hard"    # Detailed decision trace
+```
+
+---
+
 ## Claiming Work
 
 1. Run `br ready` to see open, unblocked tasks.
@@ -258,4 +289,11 @@ file_reservation_paths       # Reserve files before editing
 release_file_reservations    # Release when done editing
 renew_file_reservations      # Extend TTL if work takes longer
 install_precommit_guard      # Install git hook (once per repo)
+```
+
+### DCG (automatic — no agent action needed)
+```bash
+dcg test "<command>"         # Check if command would be blocked (debug)
+dcg explain "<command>"      # Detailed decision trace (debug)
+dcg packs                    # List available security packs
 ```
