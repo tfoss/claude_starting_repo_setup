@@ -272,10 +272,10 @@ LEADEOF
 
 # Create the tmux session with the lead agent in the first pane
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
-# Wait for claude to start, then send the initial prompt
-sleep 8
-tmux send-keys -t "$SESSION" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, and assign work to the worker agents." Enter
+
+# Write a startup script for each agent instead of relying on tmux send-keys timing
+# Start lead agent in pane 0
+tmux send-keys -t "${SESSION}:0.0" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
 
 # Stagger worker starts to avoid thundering herd
 for i in $(seq 1 "$WORKERS"); do
@@ -344,12 +344,29 @@ WORKEREOF
     # Create a new tmux pane for this worker
     tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
     tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
-    # Staggered: send initial prompt after claude starts (sleep delay + 10s for worktree + startup)
-    DELAY=$(( i * 10 + 15 ))
-    (sleep "$DELAY" && tmux send-keys -t "$SESSION:0.$i" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter) &
 
     # Re-layout panes evenly after each addition
     tmux select-layout -t "$SESSION" tiled
+done
+
+# --- Send initial prompts to all agents ---
+# Wait for the lead agent to fully start, then send prompts to each pane.
+# We calculate the max worker delay and wait for all agents to be ready.
+
+MAX_DELAY=$(( WORKERS * 10 + 15 ))
+echo ""
+echo "Waiting ${MAX_DELAY}s for all agents to start..."
+sleep "$MAX_DELAY"
+
+echo "Sending initial prompts..."
+
+# Send to lead (pane 0)
+tmux send-keys -t "${SESSION}:0.0" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, and assign work to the worker agents." Enter
+
+# Send to each worker (panes 1, 2, ...)
+for i in $(seq 1 "$WORKERS"); do
+    sleep 2
+    tmux send-keys -t "${SESSION}:0.${i}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
 
 echo ""
