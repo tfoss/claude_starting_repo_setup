@@ -1,9 +1,10 @@
 #!/bin/bash
 # swarm-start — Launch an agent swarm on an existing project.
 #
-# Starts a lead agent + N worker agents, each in its own git worktree
-# and tmux pane. The lead agent triages work with bv and coordinates
-# workers via Agent Mail.
+# Architecture:
+#   Pane 0: PA (Personal Assistant) — your interactive agent
+#   Pane 1: Lead agent — autonomous, loops forever polling Agent Mail
+#   Panes 2+: Worker agents — each in its own git worktree
 #
 # Prerequisites:
 #   - tmux (brew install tmux)
@@ -14,11 +15,6 @@
 #
 # Usage:
 #   swarm-start <project-dir> [--workers N] [--model MODEL]
-#
-# Examples:
-#   swarm-start ~/code/my-app                  # 1 lead + 2 workers
-#   swarm-start ~/code/my-app --workers 4      # 1 lead + 4 workers
-#   swarm-start ~/code/my-app --model sonnet   # Use sonnet for workers
 
 set -euo pipefail
 
@@ -30,7 +26,7 @@ AGENT_MAIL_HEALTH="http://127.0.0.1:${AGENT_MAIL_PORT}/api/health"
 usage() {
     echo "Usage: swarm-start <project-dir> [--workers N] [--model MODEL]"
     echo ""
-    echo "Launches a lead agent + N worker agents in tmux panes."
+    echo "Launches a PA + lead agent + N worker agents in tmux panes."
     echo ""
     echo "Options:"
     echo "  --workers N     Number of worker agents (default: 2)"
@@ -72,36 +68,30 @@ PROJECT_NAME="$(basename "$PROJECT_DIR")"
 
 echo "Preflight checks..."
 
-# tmux
 if ! command -v tmux &>/dev/null; then
     echo "ERROR: tmux is required. Install with: brew install tmux"
     exit 1
 fi
 
-# claude
 if ! command -v claude &>/dev/null; then
     echo "ERROR: claude (Claude Code CLI) not found"
     exit 1
 fi
 
-# br
 if ! command -v br &>/dev/null; then
     echo "ERROR: br (beads_rust) not found. Install: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash"
     exit 1
 fi
 
-# bv
 if ! command -v bv &>/dev/null; then
     echo "WARNING: bv (beads_viewer) not found. Lead agent will not have graph-based triage."
 fi
 
-# Project dir
 if [ ! -d "$PROJECT_DIR/.git" ]; then
     echo "ERROR: $PROJECT_DIR is not a git repository"
     exit 1
 fi
 
-# Beads workspace
 if [ ! -d "$PROJECT_DIR/.beads" ]; then
     echo "Initializing beads workspace..."
     (cd "$PROJECT_DIR" && br init)
@@ -116,10 +106,8 @@ if curl -sf "$AGENT_MAIL_HEALTH" > /dev/null 2>&1; then
 else
     echo "  Agent Mail is not running. Starting it..."
 
-    # Look for the Agent Mail source repo
     AGENT_MAIL_DIR="$HOME/code/mcp_agent_mail"
     if [ ! -d "$AGENT_MAIL_DIR" ]; then
-        # Try common alternative locations
         for dir in "$HOME/code/mcp-agent-mail" "$HOME/projects/mcp_agent_mail"; do
             if [ -d "$dir" ]; then
                 AGENT_MAIL_DIR="$dir"
@@ -138,7 +126,6 @@ else
     echo "  Starting from $AGENT_MAIL_DIR ..."
     (cd "$AGENT_MAIL_DIR" && nohup uv run python -m mcp_agent_mail.cli serve-http > /tmp/agent-mail.log 2>&1 &)
 
-    # Wait for it to come up
     for i in $(seq 1 10); do
         if curl -sf "$AGENT_MAIL_HEALTH" > /dev/null 2>&1; then
             echo "  Agent Mail started (PID: $(lsof -ti :$AGENT_MAIL_PORT | head -1))"
@@ -170,26 +157,59 @@ fi
 
 SESSION="swarm-${PROJECT_NAME}"
 
-# Kill existing session if present
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 
 echo ""
-echo "Launching swarm: 1 lead + $WORKERS workers"
+echo "Launching swarm: 1 PA + 1 lead + $WORKERS workers"
 echo "tmux session: $SESSION"
 echo ""
 
-# Build model flag for workers
 MODEL_FLAG=""
 if [ -n "$WORKER_MODEL" ]; then
     MODEL_FLAG="--model $WORKER_MODEL"
 fi
 
 # --- Write prompt files ---
-# Using files avoids shell escaping nightmares and lets agents re-read them.
 
 PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
 mkdir -p "$PROMPT_DIR"
 
+# === PA (Personal Assistant) system prompt ===
+cat > "$PROMPT_DIR/pa-system.txt" <<PAEOF
+You are the Personal Assistant (PA) for the $PROJECT_NAME swarm.
+You are the user's interface to the swarm. The user talks to you, and you relay to the lead agent and workers via Agent Mail.
+
+YOUR ROLE:
+- Take instructions from the user and relay them to the lead agent via send_message
+- Check fetch_inbox to show the user status updates from lead/workers
+- Help the user review PRs, check bv triage, inspect beads status
+- Answer questions about the project state
+
+AVAILABLE AGENTS:
+- Lead agent (registered with Agent Mail — check fetch_inbox or list contacts to find its name)
+$(for j in $(seq 1 $WORKERS); do echo "- worker-$j"; done)
+
+USEFUL COMMANDS:
+- fetch_inbox — see messages from other agents
+- send_message — relay instructions to the lead or workers
+- br list --status=open — see all open tasks
+- br ready — see actionable tasks
+- bv --robot-triage — get ranked recommendations
+- gh pr list — see open PRs
+- gh pr diff <N> — review a PR
+- bv --robot-alerts — see blockers and issues
+
+ON STARTUP:
+1. Call macro_start_session to register with Agent Mail
+2. Tell the user you're ready and briefly describe the swarm status
+
+When the user gives you instructions:
+- If it's about task prioritization or work assignment, relay to the lead agent via send_message
+- If it's about checking status, do it yourself and report back
+- If it's about a specific code question, check the codebase yourself or ask the relevant worker
+PAEOF
+
+# === Lead agent system prompt ===
 cat > "$PROMPT_DIR/lead-system.txt" <<LEADEOF
 You are the lead agent for the $PROJECT_NAME project.
 Your ONLY job is to plan, delegate, and coordinate. You are a MANAGER, not a coder.
@@ -205,13 +225,15 @@ YOU MUST:
 - Create and organize beads (tasks) with br create
 - Assign tasks to worker agents via Agent Mail send_message
 - Monitor worker progress via fetch_inbox
-- Merge completed worker branches into main
+- Review PRs and merge completed worker branches into main
 - Re-triage and assign new work when tasks complete
 
 YOU HAVE $WORKERS WORKER AGENTS:
 $(for j in $(seq 1 $WORKERS); do echo "- worker-$j (in their own git worktree, on branch worker-$j)"; done)
 Workers register with Agent Mail on startup and poll their inbox for assignments.
-When assigning a task, send_message to ALL workers with the bead ID, description, expected files, and which specific worker should take it.
+When assigning a task, send_message to the specific worker with the bead ID, description, expected files.
+
+There is also a PA (Personal Assistant) agent that relays user instructions to you. Check for messages from the PA.
 
 STARTUP PROTOCOL (do this NOW, step by step):
 1. Read PROJECT.md to understand the project
@@ -226,24 +248,24 @@ STARTUP PROTOCOL (do this NOW, step by step):
    - Spread work evenly across workers
    - Include: bead ID, what to build, which files/directories to touch
    - Workers will claim the bead themselves after receiving the assignment
+10. After assigning, begin the POLLING LOOP
 
-ONGOING PROTOCOL (after initial assignment — YOU MUST LOOP FOREVER):
-After assigning work, enter this loop and NEVER stop or wait for user input:
-
-1. Sleep 60 seconds
-2. Check fetch_inbox for worker messages
+POLLING LOOP (after initial assignment — REPEAT FOREVER):
+1. Sleep 90 seconds
+2. Check fetch_inbox for worker messages and PA instructions
 3. If a worker says they created a PR:
    a. REVIEW the PR (see REVIEW WORKFLOW below)
    b. If approved, merge it (see MERGE WORKFLOW below)
    c. If changes needed, send feedback via Agent Mail — be specific about what to fix
    d. Run bv --robot-triage to re-rank remaining work
    e. Assign newly unblocked tasks to idle workers via send_message
-4. If no messages, check bv --robot-alerts for blockers
-5. Go back to step 1
+4. If the PA sent instructions from the user, follow them
+5. If no messages, check bv --robot-alerts for blockers
+6. Go back to step 1
 
-NEVER stop this loop. NEVER wait for the user to tell you what to do.
+NEVER stop this loop. NEVER wait for user input — the PA handles user interaction.
 If all tasks are complete, create new beads for the next phase of work and assign them.
-If all work is truly done, send a final summary message to all workers and the user.
+If all work is truly done, send a summary to the PA agent.
 
 REVIEW WORKFLOW (do this for EVERY PR before merging):
 1. gh pr diff <PR-number> — read the full diff
@@ -270,14 +292,33 @@ MERGE WORKFLOW (only after PR is approved):
 6. Notify the worker via send_message that their PR was merged
 LEADEOF
 
-# Create the tmux session with the lead agent in the first pane
-tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
+# === Lead agent polling wrapper ===
+# This script runs the lead agent in a loop. Each iteration sends a prompt
+# via -p (which processes and exits), then sleeps and re-prompts.
+# --resume keeps the same session so context accumulates.
+cat > "$PROMPT_DIR/lead-loop.sh" <<'LOOPEOF'
+#!/bin/bash
+PROJECT_DIR="$1"
+PROMPT_DIR="$2"
+SESSION_NAME="swarm-lead-$$"
 
-# Write a startup script for each agent instead of relying on tmux send-keys timing
-# Start lead agent in pane 0
-tmux send-keys -t "${SESSION}:0.0" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/lead-system.txt'" Enter
+cd "$PROJECT_DIR"
 
-# Stagger worker starts to avoid thundering herd
+# First run: full startup
+claude --append-system-prompt-file "$PROMPT_DIR/lead-system.txt" \
+    -p "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop." \
+    --session-id "$SESSION_NAME"
+
+# Subsequent runs: poll loop
+while true; do
+    sleep 90
+    claude -p "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed. Then sleep and poll again." \
+        --resume "$SESSION_NAME" 2>/dev/null || true
+done
+LOOPEOF
+chmod +x "$PROMPT_DIR/lead-loop.sh"
+
+# === Worker system prompts ===
 for i in $(seq 1 "$WORKERS"); do
     WORKER_NAME="worker-$i"
 
@@ -338,47 +379,64 @@ IMPORTANT:
 - If you hit a blocker, message the lead agent immediately via Agent Mail
 - Pull from main before each new task to get latest beads and merged code
 WORKEREOF
+done
+
+# --- Launch tmux session ---
+
+# Pane 0: PA (interactive — this is where the user lives)
+tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR" -n "swarm"
+
+# Pane 1: Lead agent (autonomous loop)
+tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
+tmux send-keys -t "${SESSION}:0.1" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
+
+# Panes 2+: Workers (staggered)
+for i in $(seq 1 "$WORKERS"); do
+    WORKER_NAME="worker-$i"
 
     echo "  Starting $WORKER_NAME (staggered ${i}0s delay)..."
 
-    # Create a new tmux pane for this worker
     tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
     tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
-
-    # Re-layout panes evenly after each addition
-    tmux select-layout -t "$SESSION" tiled
 done
 
-# --- Send initial prompts to all agents ---
-# Wait for the lead agent to fully start, then send prompts to each pane.
-# We calculate the max worker delay and wait for all agents to be ready.
+# Layout all panes
+tmux select-layout -t "$SESSION" tiled
 
+# Start PA in pane 0 (interactive — user's pane)
+tmux send-keys -t "${SESSION}:0.0" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
+
+# Wait for all agents to start, then send worker initial prompts
 MAX_DELAY=$(( WORKERS * 10 + 15 ))
 echo ""
-echo "Waiting ${MAX_DELAY}s for all agents to start..."
+echo "Waiting ${MAX_DELAY}s for workers to start..."
 sleep "$MAX_DELAY"
 
-echo "Sending initial prompts..."
-
-# Send to lead (pane 0)
-tmux send-keys -t "${SESSION}:0.0" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, and assign work to the worker agents." Enter
-
-# Send to each worker (panes 1, 2, ...)
+echo "Sending initial prompts to workers..."
 for i in $(seq 1 "$WORKERS"); do
+    PANE_IDX=$(( i + 1 ))
     sleep 2
-    tmux send-keys -t "${SESSION}:0.${i}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
+    tmux send-keys -t "${SESSION}:0.${PANE_IDX}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
+
+# Send PA its first prompt
+sleep 2
+tmux send-keys -t "${SESSION}:0.0" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
 
 echo ""
 echo "Swarm launched in tmux session: $SESSION"
 echo ""
-echo "Commands:"
-echo "  tmux attach -t $SESSION          # View the swarm"
-echo "  tmux select-pane -t $SESSION:0.N # Focus pane N (0=lead, 1+=workers)"
-echo "  tmux kill-session -t $SESSION    # Stop the swarm"
+echo "Panes:"
+echo "  0 = PA (your interactive agent)"
+echo "  1 = Lead (autonomous — do not interact directly)"
+for i in $(seq 1 "$WORKERS"); do
+    echo "  $(( i + 1 )) = worker-$i"
+done
 echo ""
-echo "Worktrees:"
-git -C "$PROJECT_DIR" worktree list 2>/dev/null || echo "  (workers will create worktrees on start)"
+echo "Commands:"
+echo "  tmux attach -t $SESSION            # View the swarm"
+echo "  tmux select-pane -t $SESSION:0.0   # Focus on PA (your pane)"
+echo "  tmux kill-session -t $SESSION      # Stop the swarm"
 echo ""
 echo "Cleanup when done:"
 echo "  scripts/swarm-kill $PROJECT_DIR"
