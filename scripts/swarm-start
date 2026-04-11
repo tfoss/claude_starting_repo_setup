@@ -331,10 +331,10 @@ STARTUP PROTOCOL (do this NOW, step by step):
 2. Call macro_start_session to register with Agent Mail
 3. Check fetch_inbox for task assignments from the lead agent
 4. If you have an assignment, start working on it immediately
-5. If no assignment yet, wait 30 seconds then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
+5. If no assignment yet, run Bash(sleep 60), then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
 
 POLLING LOOP (when waiting for work):
-- Check fetch_inbox every 30 seconds
+- You MUST run Bash(sleep 60) between each poll. Do NOT skip the sleep
 - Also run br ready to see if tasks are available to self-claim
 - Keep polling — do NOT give up or exit. The lead agent will assign work to you.
 
@@ -364,7 +364,7 @@ IF THE LEAD REQUESTS CHANGES on your PR:
 
 AFTER-TASK POLLING LOOP (YOU MUST DO THIS — NEVER STOP):
 After completing a task or sending a completion message, enter this loop:
-1. Sleep 30 seconds
+1. Run Bash(sleep 60) — you MUST actually call this tool, do not skip it
 2. Check fetch_inbox for new assignments
 3. Run br ready to see if tasks are available to self-claim
 4. If you have work, start the WORK PROTOCOL above
