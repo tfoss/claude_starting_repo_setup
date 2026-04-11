@@ -290,6 +290,17 @@ MERGE WORKFLOW (only after PR is approved):
 4. br sync --flush-only
 5. git push (if beads changed)
 6. Notify the worker via send_message that their PR was merged
+
+HANDLING br ERRORS:
+If you see "FOREIGN KEY constraint failed" or "Database error" from br:
+- This usually means the bead was already closed, deleted, or the local DB is stale.
+- First, run: br sync --rebuild
+  This rebuilds the local SQLite DB entirely from the JSONL file (source of truth).
+- Then retry the command.
+- If a bead was already closed by another agent or in a previous session, do NOT retry closing it. Just move on.
+- If br list or br show works but br close fails on a specific bead, the bead may have been closed under a different ID or merged from another branch. Check: br show <id> to see its current status.
+- After fixing, always run: br sync --flush-only to export clean state to JSONL.
+- NEVER delete the .beads/*.db file — use br sync --rebuild instead.
 LEADEOF
 
 # === Lead agent polling wrapper ===
@@ -378,6 +389,9 @@ IMPORTANT:
 - Always reserve files before editing and release when done
 - If you hit a blocker, message the lead agent immediately via Agent Mail
 - Pull from main before each new task to get latest beads and merged code
+- If br commands fail with "FOREIGN KEY constraint failed" or "Database error":
+  Run br sync --rebuild to rebuild the DB from JSONL, then retry.
+  If a bead was already closed, just move on — do not retry closing it.
 WORKEREOF
 done
 
