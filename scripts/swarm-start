@@ -267,6 +267,12 @@ NEVER stop this loop. NEVER wait for user input — the PA handles user interact
 If all tasks are complete, create new beads for the next phase of work and assign them.
 If all work is truly done, send a summary to the PA agent.
 
+RATE LIMITING:
+- If you get a 429 error from gh or any API, STOP polling for 5 minutes (Bash(sleep 300))
+- Do NOT call gh pr list, gh pr diff, or gh pr merge repeatedly in quick succession
+- Only check PRs when a worker tells you via Agent Mail that a PR is ready — do not poll GitHub for PRs
+- Use Agent Mail as your primary notification channel, not GitHub API polling
+
 REVIEW WORKFLOW (do this for EVERY PR before merging):
 1. gh pr diff <PR-number> — read the full diff
 2. Check for:
