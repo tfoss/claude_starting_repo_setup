@@ -488,15 +488,24 @@ restart_agent() {
 
     # If claude is still running, force it
     tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
-    sleep 3
-    tmux send-keys -t "$pane_id" C-c 2>/dev/null
+    sleep 5
+    # Handle "Keep worktree" prompt — send Enter repeatedly to dismiss any prompt
+    tmux send-keys -t "$pane_id" Enter 2>/dev/null
     sleep 1
+    tmux send-keys -t "$pane_id" Enter 2>/dev/null
+    sleep 1
+    # Last resort: Ctrl-C to kill
+    tmux send-keys -t "$pane_id" C-c 2>/dev/null
+    sleep 2
 
-    # Restart claude in the pane
+    # Restart claude in the pane — use the existing worktree directory, NOT --worktree flag
+    # (--worktree would try to create a new one or prompt about the existing one)
     if [ "$role" = "lead" ]; then
         tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$system_file'" Enter
     else
-        tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --worktree '$role' $MODEL_FLAG --append-system-prompt-file '$system_file'" Enter
+        # Workers: cd into the existing worktree and run claude directly
+        local worktree_dir="$PROJECT_DIR/.claude/worktrees/$role"
+        tmux send-keys -t "$pane_id" "cd '$worktree_dir' && claude $MODEL_FLAG --append-system-prompt-file '$system_file'" Enter
     fi
 
     # Wait for claude to start, then send initial prompt + handoff
