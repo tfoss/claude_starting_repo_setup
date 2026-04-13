@@ -307,7 +307,7 @@ REVIEW WORKFLOW (do this for EVERY PR before merging):
 
 MERGE WORKFLOW (only after PR is approved):
 1. gh pr merge <PR-number> --merge
-2. git pull origin main
+2. git pull origin main --rebase
 3. br sync --import-only
 4. br sync --flush-only
 5. git push (if beads changed)
@@ -377,7 +377,7 @@ This is the external polling system checking in. Just do:
 4. If no task, respond briefly "No tasks yet." and STOP. You will be prompted again.
 
 WORK PROTOCOL — when you receive a task via Agent Mail:
-1. Pull latest from main: git pull origin main (to get latest beads and code)
+1. Pull latest from main: git pull origin main --rebase (to get latest beads and code)
 2. Run br sync --rebuild to fully rebuild local DB from JSONL (this prevents FK errors)
 3. Claim it: br update <id> --status=in_progress
    If this fails with FOREIGN KEY error, run br sync --rebuild again and retry ONCE. If it still fails, skip the br update and proceed with the work anyway — the bead status is not critical.
@@ -588,7 +588,7 @@ restart_agent() {
                 sleep 10
             else
                 # Normal poll
-                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: run git pull origin main and br sync --rebuild first, then read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: run git pull origin main --rebase and br sync --rebuild first, then read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
                 sleep 5
             fi
         done
