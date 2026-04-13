@@ -312,6 +312,8 @@ MERGE WORKFLOW (only after PR is approved):
 4. br sync --flush-only
 5. git push (if beads changed)
 6. Notify the worker via send_message that their PR was merged
+7. After merging all pending PRs, signal for context refresh: touch $PROMPT_DIR/signals/lead-merged
+   Your session will restart with fresh context shortly — this is normal.
 
 HANDLING br ERRORS:
 If you see "FOREIGN KEY constraint failed" or "Database error" from br:
@@ -387,7 +389,8 @@ WORK PROTOCOL — when you receive a task via Agent Mail:
 12. git add, commit (reference bead ID in message), and push: git push -u origin feature/<bead-id>-<short-description>
 13. Create a PR: gh pr create --title "<bead-id>: short description" --body "## Summary\n- what you built\n- bead ID\n\n## Tests\n- what tests were added"
 14. Send completion message via Agent Mail to the lead agent — include the PR number/URL and bead ID
-15. IMMEDIATELY go back to the POLLING LOOP below — do NOT stop
+15. Signal completion for context refresh: touch $PROMPT_DIR/signals/$WORKER_NAME-done
+16. Your session will restart with fresh context shortly — this is normal. Your work is safe in git.
 
 IF THE LEAD REQUESTS CHANGES on your PR:
 1. Check fetch_inbox for the feedback
@@ -468,15 +471,15 @@ for i in $(seq 1 "$WORKERS"); do
     tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
 
-# Save pane IDs and config for the polling/restart loop
+# Save pane IDs for the polling/restart loop
 for idx in "${!PANE_IDS[@]}"; do
     echo "${PANE_IDS[$idx]}" >> "$PROMPT_DIR/pane-ids.txt"
 done
 
-# How many polling cycles before restarting an agent (90s * 15 = ~22 minutes)
-RESTART_EVERY=15
+# Create completion signal directory — agents touch files here when they finish a task
+mkdir -p "$PROMPT_DIR/signals"
 
-# Function to restart an agent in a tmux pane
+# Function to restart an agent in a tmux pane with a fresh context
 restart_agent() {
     local pane_id="$1"
     local role="$2"          # "lead" or "worker-N"
@@ -484,25 +487,17 @@ restart_agent() {
     local initial_prompt="$4"
     local handoff_file="$PROMPT_DIR/${role}-handoff.txt"
 
-    # Ask the agent to write a handoff summary
-    tmux send-keys -t "$pane_id" "Before you go: write a 5-line status summary to $handoff_file — include what tasks are in progress, what's been completed this session, what's pending, and any blockers. Use the Write tool." Enter 2>/dev/null
-    sleep 30  # Give it time to write the handoff
+    echo "[swarm] Restarting $role for fresh context..."
 
-    # Send /exit to claude (graceful shutdown)
+    # Ask the agent to write a handoff summary
+    tmux send-keys -t "$pane_id" "Session refresh: write a brief status summary to $handoff_file using the Write tool — what you completed, what's in progress, any blockers. Then type /exit to end this session." Enter 2>/dev/null
+    sleep 45  # Give it time to write the handoff and exit
+
+    # If claude is still running, force it
     tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
     sleep 3
-
-    # If claude is still running, send Ctrl-C then exit
     tmux send-keys -t "$pane_id" C-c 2>/dev/null
     sleep 1
-    tmux send-keys -t "$pane_id" "exit" Enter 2>/dev/null
-    sleep 2
-
-    # Build the restart command with handoff context
-    local handoff_flag=""
-    if [ -f "$handoff_file" ]; then
-        handoff_flag="--append-system-prompt 'HANDOFF FROM PREVIOUS SESSION: $(cat "$handoff_file" 2>/dev/null | tr "\n" " ")'"
-    fi
 
     # Restart claude in the pane
     if [ "$role" = "lead" ]; then
@@ -523,40 +518,62 @@ restart_agent() {
 # Start background polling/restart loop
 (
     sleep 120  # Wait for agents to finish initial startup
-    CYCLE=0
+
+    # Track cycles per agent for safety fallback restart
+    LEAD_CYCLES=0
+    for wi in $(seq 1 "$WORKERS"); do
+        eval "WORKER_${wi}_CYCLES=0"
+    done
+    MAX_CYCLES=30  # Force restart after ~45 min even without signal
 
     while tmux has-session -t "$SESSION" 2>/dev/null; do
         sleep 90
-        CYCLE=$(( CYCLE + 1 ))
+        LEAD_CYCLES=$(( LEAD_CYCLES + 1 ))
 
-        # Check if it's time to restart agents
-        if [ $(( CYCLE % RESTART_EVERY )) -eq 0 ]; then
-            echo "[swarm] Cycle $CYCLE: restarting agents for fresh context..."
+        # --- Check for worker task completions and restart if needed ---
+        for wi in $(seq 1 "$WORKERS"); do
+            WP=$(( wi + 1 ))
+            WNAME="worker-$wi"
+            SIGNAL_FILE="$PROMPT_DIR/signals/${WNAME}-done"
 
-            # Restart lead
-            restart_agent "${PANE_IDS[1]}" "lead" "$PROMPT_DIR/lead-system.txt" \
-                "You are resuming after a context refresh. Read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox, review any open PRs, and continue coordinating."
+            eval "WORKER_${wi}_CYCLES=\$(( WORKER_${wi}_CYCLES + 1 ))"
+            eval "WC=\$WORKER_${wi}_CYCLES"
 
-            sleep 15
+            # Restart if: signal file exists OR safety fallback (too many cycles)
+            if [ -f "$SIGNAL_FILE" ] || [ "$WC" -ge "$MAX_CYCLES" ]; then
+                rm -f "$SIGNAL_FILE"
+                eval "WORKER_${wi}_CYCLES=0"
 
-            # Restart workers
-            for wi in $(seq 1 "$WORKERS"); do
-                WP=$(( wi + 1 ))
-                WNAME="worker-$wi"
+                REASON="task completion"
+                [ "$WC" -ge "$MAX_CYCLES" ] && REASON="context refresh (${MAX_CYCLES} cycles)"
+
+                echo "[swarm] Restarting $WNAME ($REASON)"
                 restart_agent "${PANE_IDS[$WP]}" "$WNAME" "$PROMPT_DIR/${WNAME}-system.txt" \
-                    "You are resuming after a context refresh. Read $PROMPT_DIR/roster.txt, register with Agent Mail, check fetch_inbox for assignments, and continue working."
+                    "You are resuming with fresh context. Read $PROMPT_DIR/roster.txt, register with Agent Mail, check fetch_inbox for your next assignment, and start working."
                 sleep 10
-            done
-        else
-            # Normal polling: re-prompt lead
-            tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
-
-            # Re-prompt each worker
-            for wi in $(seq 1 "$WORKERS"); do
-                WP=$(( wi + 1 ))
-                sleep 5
+            else
+                # Normal poll
                 tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
-            done
+                sleep 5
+            fi
+        done
+
+        # --- Check for lead merge completions and restart if needed ---
+        # --- Check lead for merge completions or safety fallback ---
+        LEAD_SIGNAL="$PROMPT_DIR/signals/lead-merged"
+        if [ -f "$LEAD_SIGNAL" ] || [ "$LEAD_CYCLES" -ge "$MAX_CYCLES" ]; then
+            rm -f "$LEAD_SIGNAL"
+            REASON="PR merge"
+            [ "$LEAD_CYCLES" -ge "$MAX_CYCLES" ] && REASON="context refresh (${MAX_CYCLES} cycles)"
+            LEAD_CYCLES=0
+
+            echo "[swarm] Restarting lead ($REASON)"
+            restart_agent "${PANE_IDS[1]}" "lead" "$PROMPT_DIR/lead-system.txt" \
+                "You are resuming with fresh context. Read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox, review any open PRs, run bv --robot-triage, and assign new work."
+            sleep 15
+        else
+            # Normal poll
+            tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
         fi
     done
 ) &
