@@ -451,17 +451,17 @@ sleep "$MAX_DELAY"
 echo "Sending initial prompts..."
 
 # Send to PA
-tmux send-keys -t "${PANE_IDS[0]}" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
+send_prompt "${PANE_IDS[0]}" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm."
 
 # Send to lead
 sleep 2
-tmux send-keys -t "${PANE_IDS[1]}" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop." Enter
+send_prompt "${PANE_IDS[1]}" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop."
 
 # Send to workers
 for i in $(seq 1 "$WORKERS"); do
     PANE_IDX=$(( i + 1 ))
     sleep 2
-    tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
+    send_prompt "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working."
 done
 
 # Save pane IDs for the polling/restart loop
@@ -471,6 +471,17 @@ done
 
 # Create completion signal directory — agents touch files here when they finish a task
 mkdir -p "$PROMPT_DIR/signals"
+
+# Send a prompt to a claude pane reliably — clear any buffered input first
+send_prompt() {
+    local pane_id="$1"
+    local prompt="$2"
+    # Clear any existing buffered input
+    tmux send-keys -t "$pane_id" C-c 2>/dev/null
+    sleep 1
+    # Send the prompt
+    tmux send-keys -t "$pane_id" "$prompt" Enter 2>/dev/null
+}
 
 # Function to restart an agent in a tmux pane with a fresh context
 restart_agent() {
@@ -483,7 +494,7 @@ restart_agent() {
     echo "[swarm] Restarting $role for fresh context..."
 
     # Ask the agent to write a handoff summary
-    tmux send-keys -t "$pane_id" "Session refresh: write a brief status summary to $handoff_file using the Write tool — what you completed, what's in progress, any blockers. Then type /exit to end this session." Enter 2>/dev/null
+    send_prompt "$pane_id" "Session refresh: write a brief status summary to $handoff_file using the Write tool — what you completed, what's in progress, any blockers. Then type /exit to end this session."
     sleep 45  # Give it time to write the handoff and exit
 
     # Force exit: try /exit, Enter (for prompts), Ctrl-C, escalating
@@ -535,9 +546,9 @@ restart_agent() {
 
     # Send initial prompt + handoff
     if [ -f "$handoff_file" ]; then
-        tmux send-keys -t "$pane_id" "$initial_prompt Also, read $handoff_file for context from your previous session." Enter
+        send_prompt "$pane_id" "$initial_prompt Also, read $handoff_file for context from your previous session."
     else
-        tmux send-keys -t "$pane_id" "$initial_prompt" Enter
+        send_prompt "$pane_id" "$initial_prompt"
     fi
 
     # Set a cooldown so the polling loop doesn't send prompts while agent is processing
@@ -588,7 +599,7 @@ restart_agent() {
                 sleep 10
             else
                 # Normal poll
-                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: check fetch_inbox for task assignments. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+                send_prompt "${PANE_IDS[$WP]}" "Poll: check fetch_inbox for task assignments. If you have a task, start the WORK PROTOCOL."
                 sleep 5
             fi
         done
@@ -612,7 +623,7 @@ restart_agent() {
             sleep 15
         else
             # Normal poll
-            tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+            send_prompt "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed."
         fi
     done
 ) &
