@@ -320,17 +320,13 @@ PROMPT_DIR="$2"
 
 cd "$PROJECT_DIR"
 
-# First run: full startup with a named session for resuming
-claude --append-system-prompt-file "$PROMPT_DIR/lead-system.txt" \
-    -p "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop." \
-    --name "swarm-lead"
+# Run lead agent interactively. We send the initial prompt via a named pipe
+# so claude starts working immediately but stays interactive for the polling
+# prompts we send via tmux send-keys from the outer loop.
 
-# Subsequent runs: resume the session and poll
-while true; do
-    sleep 90
-    claude -p "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." \
-        --resume "swarm-lead" 2>/dev/null || true
-done
+# Start claude in the background — it will wait at the > prompt
+# The outer script will send prompts via tmux send-keys to this pane
+exec claude --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
 LOOPEOF
 chmod +x "$PROMPT_DIR/lead-loop.sh"
 
@@ -439,26 +435,43 @@ echo "Sending initial prompts..."
 # Send to PA
 tmux send-keys -t "${PANE_IDS[0]}" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
 
-# Send to workers (lead starts itself via lead-loop.sh)
+# Send to lead
+sleep 2
+tmux send-keys -t "${PANE_IDS[1]}" "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop." Enter
+
+# Send to workers
 for i in $(seq 1 "$WORKERS"); do
     PANE_IDX=$(( i + 1 ))
     sleep 2
     tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
 
+# Save pane IDs for the lead polling loop
+echo "${PANE_IDS[1]}" > "$PROMPT_DIR/lead-pane-id"
+
+# Start background polling loop that re-prompts the lead every 90 seconds
+(
+    sleep 120  # Wait for lead to finish initial startup
+    while tmux has-session -t "$SESSION" 2>/dev/null; do
+        sleep 90
+        tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+    done
+) &
+POLL_PID=$!
+echo "$POLL_PID" > "$PROMPT_DIR/poll-loop.pid"
+
 echo ""
 echo "Swarm launched in tmux session: $SESSION"
 echo ""
 echo "Panes:"
 echo "  0 = PA (your interactive agent)"
-echo "  1 = Lead (autonomous — do not interact directly)"
+echo "  1 = Lead (autonomous, polled every 90s)"
 for i in $(seq 1 "$WORKERS"); do
     echo "  $(( i + 1 )) = worker-$i"
 done
 echo ""
 echo "Commands:"
 echo "  tmux attach -t $SESSION            # View the swarm"
-echo "  tmux select-pane -t $SESSION:0.0   # Focus on PA (your pane)"
 echo "  tmux kill-session -t $SESSION      # Stop the swarm"
 echo ""
 echo "Cleanup when done:"

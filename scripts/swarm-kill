@@ -50,6 +50,15 @@ done
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 SESSION="swarm-${PROJECT_NAME}"
 
+# --- Kill polling loop ---
+
+PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
+if [ -f "$PROMPT_DIR/poll-loop.pid" ]; then
+    POLL_PID=$(cat "$PROMPT_DIR/poll-loop.pid")
+    kill "$POLL_PID" 2>/dev/null && echo "Killed polling loop (PID: $POLL_PID)" || true
+    rm -f "$PROMPT_DIR/poll-loop.pid"
+fi
+
 # --- Kill tmux session ---
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
