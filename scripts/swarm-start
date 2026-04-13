@@ -519,13 +519,30 @@ restart_agent() {
         tmux send-keys -t "$pane_id" "cd '$worktree_dir' && claude $MODEL_FLAG --append-system-prompt-file '$system_file'" Enter
     fi
 
-    # Wait for claude to start, then send initial prompt + handoff
-    sleep 8
+    # Wait for claude to fully start — poll for the ">" prompt
+    echo "[swarm] Waiting for $role to start..."
+    for wait_i in $(seq 1 30); do
+        sleep 5
+        local pane_content
+        pane_content=$(tmux capture-pane -t "$pane_id" -p 2>/dev/null | tail -5)
+        # Look for claude's input prompt ("> " or "❯")
+        if echo "$pane_content" | grep -qE '^[>❯] |shortcuts'; then
+            echo "[swarm] $role is ready"
+            break
+        fi
+    done
+    sleep 2
+
+    # Send initial prompt + handoff
     if [ -f "$handoff_file" ]; then
         tmux send-keys -t "$pane_id" "$initial_prompt Also, read $handoff_file for context from your previous session." Enter
     else
         tmux send-keys -t "$pane_id" "$initial_prompt" Enter
     fi
+
+    # Set a cooldown so the polling loop doesn't send prompts while agent is processing
+    touch "$PROMPT_DIR/signals/${role}-cooldown"
+    (sleep 120 && rm -f "$PROMPT_DIR/signals/${role}-cooldown") &
 }
 
 # Start background polling/restart loop
@@ -552,6 +569,11 @@ restart_agent() {
             eval "WORKER_${wi}_CYCLES=\$(( WORKER_${wi}_CYCLES + 1 ))"
             eval "WC=\$WORKER_${wi}_CYCLES"
 
+            # Skip if agent is in cooldown (just restarted)
+            if [ -f "$PROMPT_DIR/signals/${WNAME}-cooldown" ]; then
+                continue
+            fi
+
             # Restart if: signal file exists OR safety fallback (too many cycles)
             if [ -f "$SIGNAL_FILE" ] || [ "$WC" -ge "$MAX_CYCLES" ]; then
                 rm -f "$SIGNAL_FILE"
@@ -571,8 +593,12 @@ restart_agent() {
             fi
         done
 
-        # --- Check for lead merge completions and restart if needed ---
         # --- Check lead for merge completions or safety fallback ---
+        # Skip if lead is in cooldown
+        if [ -f "$PROMPT_DIR/signals/lead-cooldown" ]; then
+            continue
+        fi
+
         LEAD_SIGNAL="$PROMPT_DIR/signals/lead-merged"
         if [ -f "$LEAD_SIGNAL" ] || [ "$LEAD_CYCLES" -ge "$MAX_CYCLES" ]; then
             rm -f "$LEAD_SIGNAL"
