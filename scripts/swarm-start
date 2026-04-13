@@ -404,11 +404,15 @@ done
 # --- Launch tmux session ---
 
 # Pane 0: PA (interactive — this is where the user lives)
-tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR" -n "swarm"
+tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
+sleep 1
+
+# Start PA in pane 0
+tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
 
 # Pane 1: Lead agent (autonomous loop)
 tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "${SESSION}:0.1" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
+tmux send-keys -t "$SESSION" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
 
 # Panes 2+: Workers (staggered)
 for i in $(seq 1 "$WORKERS"); do
@@ -423,25 +427,23 @@ done
 # Layout all panes
 tmux select-layout -t "$SESSION" tiled
 
-# Start PA in pane 0 (interactive — user's pane)
-tmux send-keys -t "${SESSION}:0.0" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
-
-# Wait for all agents to start, then send worker initial prompts
+# Wait for all agents to start, then send initial prompts
 MAX_DELAY=$(( WORKERS * 10 + 15 ))
 echo ""
-echo "Waiting ${MAX_DELAY}s for workers to start..."
+echo "Waiting ${MAX_DELAY}s for all agents to start..."
 sleep "$MAX_DELAY"
 
-echo "Sending initial prompts to workers..."
+echo "Sending initial prompts..."
+
+# Send to PA (pane 0)
+tmux send-keys -t "${SESSION}.0" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
+
+# Workers are panes 2, 3, ... (pane 1 is lead, which starts itself via lead-loop.sh)
 for i in $(seq 1 "$WORKERS"); do
     PANE_IDX=$(( i + 1 ))
     sleep 2
-    tmux send-keys -t "${SESSION}:0.${PANE_IDX}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
+    tmux send-keys -t "${SESSION}.${PANE_IDX}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
-
-# Send PA its first prompt
-sleep 2
-tmux send-keys -t "${SESSION}:0.0" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
 
 echo ""
 echo "Swarm launched in tmux session: $SESSION"
