@@ -588,7 +588,7 @@ restart_agent() {
                 sleep 10
             else
                 # Normal poll
-                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: run git pull origin main --rebase and br sync --rebuild first, then read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: check fetch_inbox for task assignments. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
                 sleep 5
             fi
         done
