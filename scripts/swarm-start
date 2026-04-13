@@ -367,12 +367,14 @@ STARTUP PROTOCOL (do this NOW, step by step):
 4. Read $PROMPT_DIR/roster.txt to find the lead agent's Agent Mail name
 5. Check fetch_inbox for task assignments from the lead agent
 6. If you have an assignment, start working on it immediately
-7. If no assignment yet, run Bash(sleep 2), then proceed, then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
+7. If no assignment yet, STOP and wait. An external system will prompt you again in 90 seconds. Do NOT poll on your own.
 
-POLLING LOOP (when waiting for work):
-- You MUST run Bash(sleep 2), then proceed between each poll. Do NOT skip the sleep
-- Also run br ready to see if tasks are available to self-claim
-- Keep polling — do NOT give up or exit. The lead agent will assign work to you.
+WHEN YOU RECEIVE A "Poll:" MESSAGE:
+This is the external polling system checking in. Just do:
+1. Check fetch_inbox for new task assignments
+2. Check br ready for available work
+3. If you have a task, start the WORK PROTOCOL below
+4. If no task, respond briefly "No tasks yet." and STOP. You will be prompted again.
 
 WORK PROTOCOL — when you receive a task via Agent Mail:
 1. Pull latest from main: git pull origin main (to get latest beads and code)
@@ -390,24 +392,14 @@ WORK PROTOCOL — when you receive a task via Agent Mail:
 13. Create a PR: gh pr create --title "<bead-id>: short description" --body "## Summary\n- what you built\n- bead ID\n\n## Tests\n- what tests were added"
 14. Send completion message via Agent Mail to the lead agent — include the PR number/URL and bead ID
 15. Signal completion for context refresh: touch $PROMPT_DIR/signals/$WORKER_NAME-done
-16. Your session will restart with fresh context shortly — this is normal. Your work is safe in git.
+16. STOP. Your session will restart with fresh context shortly — this is normal. Your work is safe in git.
 
 IF THE LEAD REQUESTS CHANGES on your PR:
 1. Check fetch_inbox for the feedback
 2. Make the requested fixes on your feature branch
 3. Commit, push
 4. Reply via Agent Mail that fixes are pushed
-5. Go back to the POLLING LOOP while waiting for re-review
-
-AFTER-TASK POLLING LOOP (YOU MUST DO THIS — NEVER STOP):
-After completing a task or sending a completion message, enter this loop:
-1. Run Bash(sleep 2), then proceed — you MUST actually call this tool, do not skip it
-2. Check fetch_inbox for new assignments
-3. Run br ready to see if tasks are available to self-claim
-4. If you have work, start the WORK PROTOCOL above
-5. If no work yet, go back to step 1
-NEVER exit this loop. NEVER stop and wait for user input. NEVER say "standing by" and stop.
-Keep polling until you receive work or the session is killed.
+5. STOP and wait for the next poll prompt.
 
 IMPORTANT:
 - You are in a git worktree — your branch is $WORKER_NAME
