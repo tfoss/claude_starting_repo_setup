@@ -284,7 +284,7 @@ If all tasks are complete, create new beads for the next phase of work and assig
 If all work is truly done, send a summary to the PA agent.
 
 RATE LIMITING:
-- If you get a 429 error from gh or any API, STOP polling for 5 minutes (Bash(sleep 300))
+- If you get a 429 error from gh or any API, STOP polling — tell the PA you are rate limited and wait for the next polling loop prompt
 - Do NOT call gh pr list, gh pr diff, or gh pr merge repeatedly in quick succession
 - Only check PRs when a worker tells you via Agent Mail that a PR is ready — do not poll GitHub for PRs
 - Use Agent Mail as your primary notification channel, not GitHub API polling
@@ -365,10 +365,10 @@ STARTUP PROTOCOL (do this NOW, step by step):
 4. Read $PROMPT_DIR/roster.txt to find the lead agent's Agent Mail name
 5. Check fetch_inbox for task assignments from the lead agent
 6. If you have an assignment, start working on it immediately
-7. If no assignment yet, run Bash(sleep 60), then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
+7. If no assignment yet, run Bash(sleep 2), then proceed, then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
 
 POLLING LOOP (when waiting for work):
-- You MUST run Bash(sleep 60) between each poll. Do NOT skip the sleep
+- You MUST run Bash(sleep 2), then proceed between each poll. Do NOT skip the sleep
 - Also run br ready to see if tasks are available to self-claim
 - Keep polling — do NOT give up or exit. The lead agent will assign work to you.
 
@@ -398,7 +398,7 @@ IF THE LEAD REQUESTS CHANGES on your PR:
 
 AFTER-TASK POLLING LOOP (YOU MUST DO THIS — NEVER STOP):
 After completing a task or sending a completion message, enter this loop:
-1. Run Bash(sleep 60) — you MUST actually call this tool, do not skip it
+1. Run Bash(sleep 2), then proceed — you MUST actually call this tool, do not skip it
 2. Check fetch_inbox for new assignments
 3. Run br ready to see if tasks are available to self-claim
 4. If you have work, start the WORK PROTOCOL above
@@ -471,12 +471,21 @@ done
 # Save pane IDs for the lead polling loop
 echo "${PANE_IDS[1]}" > "$PROMPT_DIR/lead-pane-id"
 
-# Start background polling loop that re-prompts the lead every 90 seconds
+# Start background polling loops that re-prompt agents periodically
 (
-    sleep 120  # Wait for lead to finish initial startup
+    sleep 120  # Wait for agents to finish initial startup
     while tmux has-session -t "$SESSION" 2>/dev/null; do
         sleep 90
+
+        # Re-prompt lead
         tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+
+        # Re-prompt each worker
+        for wi in $(seq 1 "$WORKERS"); do
+            WP=$(( wi + 1 ))
+            sleep 5
+            tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+        done
     done
 ) &
 POLL_PID=$!
