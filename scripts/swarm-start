@@ -403,25 +403,27 @@ done
 
 # --- Launch tmux session ---
 
-# Pane 0: PA (interactive — this is where the user lives)
-tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
-sleep 1
+# Track pane IDs (% format) for reliable targeting later
+declare -a PANE_IDS
 
-# Start PA in pane 0
-tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
+# Pane 0: PA (interactive — this is where the user lives)
+tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}' > /dev/null
+PANE_IDS[0]=$(tmux list-panes -t "$SESSION" -F '#{pane_id}' | tail -1)
+tmux send-keys -t "${PANE_IDS[0]}" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
 
 # Pane 1: Lead agent (autonomous loop)
-tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "$SESSION" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
+PANE_IDS[1]=$(tmux split-window -t "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}')
+tmux send-keys -t "${PANE_IDS[1]}" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
 
 # Panes 2+: Workers (staggered)
 for i in $(seq 1 "$WORKERS"); do
     WORKER_NAME="worker-$i"
+    PANE_IDX=$(( i + 1 ))
 
     echo "  Starting $WORKER_NAME (staggered ${i}0s delay)..."
 
-    tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
-    tmux send-keys -t "$SESSION" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
+    PANE_IDS[$PANE_IDX]=$(tmux split-window -t "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}')
+    tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
 done
 
 # Layout all panes
@@ -435,14 +437,14 @@ sleep "$MAX_DELAY"
 
 echo "Sending initial prompts..."
 
-# Send to PA (pane 0)
-tmux send-keys -t "${SESSION}.0" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
+# Send to PA
+tmux send-keys -t "${PANE_IDS[0]}" "Register with Agent Mail via macro_start_session, then give me a brief status of the swarm." Enter
 
-# Workers are panes 2, 3, ... (pane 1 is lead, which starts itself via lead-loop.sh)
+# Send to workers (lead starts itself via lead-loop.sh)
 for i in $(seq 1 "$WORKERS"); do
     PANE_IDX=$(( i + 1 ))
     sleep 2
-    tmux send-keys -t "${SESSION}.${PANE_IDX}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
+    tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
 
 echo ""
