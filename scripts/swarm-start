@@ -486,20 +486,31 @@ restart_agent() {
     tmux send-keys -t "$pane_id" "Session refresh: write a brief status summary to $handoff_file using the Write tool — what you completed, what's in progress, any blockers. Then type /exit to end this session." Enter 2>/dev/null
     sleep 45  # Give it time to write the handoff and exit
 
-    # If claude is still running, force it
-    tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
-    sleep 5
-    # Handle "Keep worktree" prompt — send Enter repeatedly to dismiss any prompt
-    tmux send-keys -t "$pane_id" Enter 2>/dev/null
-    sleep 1
-    tmux send-keys -t "$pane_id" Enter 2>/dev/null
-    sleep 1
-    # Last resort: Ctrl-C to kill
-    tmux send-keys -t "$pane_id" C-c 2>/dev/null
-    sleep 2
+    # Force exit: try /exit, Enter (for prompts), Ctrl-C, escalating
+    for attempt in 1 2 3; do
+        tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
+        sleep 3
+        tmux send-keys -t "$pane_id" Enter 2>/dev/null
+        sleep 2
 
-    # Restart claude in the pane — use the existing worktree directory, NOT --worktree flag
-    # (--worktree would try to create a new one or prompt about the existing one)
+        # Check if claude has exited by looking for shell prompt
+        local pane_content
+        pane_content=$(tmux capture-pane -t "$pane_id" -p 2>/dev/null | tail -3)
+        if echo "$pane_content" | grep -qE '^\$|^%|^>.*➜|^\(base\)'; then
+            echo "[swarm] $role exited cleanly"
+            break
+        fi
+
+        if [ "$attempt" -eq 3 ]; then
+            echo "[swarm] $role didn't exit cleanly, forcing..."
+            tmux send-keys -t "$pane_id" C-c 2>/dev/null
+            sleep 2
+            tmux send-keys -t "$pane_id" C-c 2>/dev/null
+            sleep 2
+        fi
+    done
+
+    # Restart claude in the pane
     if [ "$role" = "lead" ]; then
         tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$system_file'" Enter
     else
