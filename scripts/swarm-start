@@ -468,24 +468,96 @@ for i in $(seq 1 "$WORKERS"); do
     tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "Begin your startup protocol now. Read AGENTS.md, register with Agent Mail, check your inbox for task assignments, and start working." Enter
 done
 
-# Save pane IDs for the lead polling loop
-echo "${PANE_IDS[1]}" > "$PROMPT_DIR/lead-pane-id"
+# Save pane IDs and config for the polling/restart loop
+for idx in "${!PANE_IDS[@]}"; do
+    echo "${PANE_IDS[$idx]}" >> "$PROMPT_DIR/pane-ids.txt"
+done
 
-# Start background polling loops that re-prompt agents periodically
+# How many polling cycles before restarting an agent (90s * 15 = ~22 minutes)
+RESTART_EVERY=15
+
+# Function to restart an agent in a tmux pane
+restart_agent() {
+    local pane_id="$1"
+    local role="$2"          # "lead" or "worker-N"
+    local system_file="$3"
+    local initial_prompt="$4"
+    local handoff_file="$PROMPT_DIR/${role}-handoff.txt"
+
+    # Ask the agent to write a handoff summary
+    tmux send-keys -t "$pane_id" "Before you go: write a 5-line status summary to $handoff_file — include what tasks are in progress, what's been completed this session, what's pending, and any blockers. Use the Write tool." Enter 2>/dev/null
+    sleep 30  # Give it time to write the handoff
+
+    # Send /exit to claude (graceful shutdown)
+    tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
+    sleep 3
+
+    # If claude is still running, send Ctrl-C then exit
+    tmux send-keys -t "$pane_id" C-c 2>/dev/null
+    sleep 1
+    tmux send-keys -t "$pane_id" "exit" Enter 2>/dev/null
+    sleep 2
+
+    # Build the restart command with handoff context
+    local handoff_flag=""
+    if [ -f "$handoff_file" ]; then
+        handoff_flag="--append-system-prompt 'HANDOFF FROM PREVIOUS SESSION: $(cat "$handoff_file" 2>/dev/null | tr "\n" " ")'"
+    fi
+
+    # Restart claude in the pane
+    if [ "$role" = "lead" ]; then
+        tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$system_file'" Enter
+    else
+        tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --worktree '$role' $MODEL_FLAG --append-system-prompt-file '$system_file'" Enter
+    fi
+
+    # Wait for claude to start, then send initial prompt + handoff
+    sleep 8
+    if [ -f "$handoff_file" ]; then
+        tmux send-keys -t "$pane_id" "$initial_prompt Also, read $handoff_file for context from your previous session." Enter
+    else
+        tmux send-keys -t "$pane_id" "$initial_prompt" Enter
+    fi
+}
+
+# Start background polling/restart loop
 (
     sleep 120  # Wait for agents to finish initial startup
+    CYCLE=0
+
     while tmux has-session -t "$SESSION" 2>/dev/null; do
         sleep 90
+        CYCLE=$(( CYCLE + 1 ))
 
-        # Re-prompt lead
-        tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+        # Check if it's time to restart agents
+        if [ $(( CYCLE % RESTART_EVERY )) -eq 0 ]; then
+            echo "[swarm] Cycle $CYCLE: restarting agents for fresh context..."
 
-        # Re-prompt each worker
-        for wi in $(seq 1 "$WORKERS"); do
-            WP=$(( wi + 1 ))
-            sleep 5
-            tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
-        done
+            # Restart lead
+            restart_agent "${PANE_IDS[1]}" "lead" "$PROMPT_DIR/lead-system.txt" \
+                "You are resuming after a context refresh. Read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox, review any open PRs, and continue coordinating."
+
+            sleep 15
+
+            # Restart workers
+            for wi in $(seq 1 "$WORKERS"); do
+                WP=$(( wi + 1 ))
+                WNAME="worker-$wi"
+                restart_agent "${PANE_IDS[$WP]}" "$WNAME" "$PROMPT_DIR/${WNAME}-system.txt" \
+                    "You are resuming after a context refresh. Read $PROMPT_DIR/roster.txt, register with Agent Mail, check fetch_inbox for assignments, and continue working."
+                sleep 10
+            done
+        else
+            # Normal polling: re-prompt lead
+            tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+
+            # Re-prompt each worker
+            for wi in $(seq 1 "$WORKERS"); do
+                WP=$(( wi + 1 ))
+                sleep 5
+                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+            done
+        fi
     done
 ) &
 POLL_PID=$!
