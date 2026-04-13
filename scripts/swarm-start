@@ -378,15 +378,16 @@ This is the external polling system checking in. Just do:
 
 WORK PROTOCOL — when you receive a task via Agent Mail:
 1. Pull latest from main: git pull origin main (to get latest beads and code)
-2. Run br sync --import-only to load latest beads into your local DB
+2. Run br sync --rebuild to fully rebuild local DB from JSONL (this prevents FK errors)
 3. Claim it: br update <id> --status=in_progress
+   If this fails with FOREIGN KEY error, run br sync --rebuild again and retry ONCE. If it still fails, skip the br update and proceed with the work anyway — the bead status is not critical.
 4. Reserve files: file_reservation_paths with exclusive=true
 5. Create a feature branch from your worktree: git checkout -b feature/<bead-id>-<short-description>
 6. Implement the task
 7. Write tests
 8. Run tests and make sure they pass
 9. Release file reservations
-10. br close <id>
+10. br close <id> — if FK error, run br sync --rebuild and retry once. If still fails, skip it.
 11. br sync --flush-only
 12. git add, commit (reference bead ID in message), and push: git push -u origin feature/<bead-id>-<short-description>
 13. Create a PR: gh pr create --title "<bead-id>: short description" --body "## Summary\n- what you built\n- bead ID\n\n## Tests\n- what tests were added"
@@ -545,7 +546,7 @@ restart_agent() {
                 sleep 10
             else
                 # Normal poll
-                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
+                tmux send-keys -t "${PANE_IDS[$WP]}" "Poll: run git pull origin main and br sync --rebuild first, then read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for task assignments, check br ready for available work. If you have a task, start the WORK PROTOCOL." Enter 2>/dev/null
                 sleep 5
             fi
         done
