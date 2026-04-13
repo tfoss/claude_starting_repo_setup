@@ -317,20 +317,19 @@ cat > "$PROMPT_DIR/lead-loop.sh" <<'LOOPEOF'
 #!/bin/bash
 PROJECT_DIR="$1"
 PROMPT_DIR="$2"
-SESSION_NAME="swarm-lead-$$"
 
 cd "$PROJECT_DIR"
 
-# First run: full startup
+# First run: full startup with a named session for resuming
 claude --append-system-prompt-file "$PROMPT_DIR/lead-system.txt" \
     -p "Begin your startup protocol now. Read PROJECT.md, then AGENTS.md, register with Agent Mail, create beads for the project, assign work to the worker agents, then begin your polling loop." \
-    --session-id "$SESSION_NAME"
+    --name "swarm-lead"
 
-# Subsequent runs: poll loop
+# Subsequent runs: resume the session and poll
 while true; do
     sleep 90
-    claude -p "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed. Then sleep and poll again." \
-        --resume "$SESSION_NAME" 2>/dev/null || true
+    claude -p "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." \
+        --resume "swarm-lead" 2>/dev/null || true
 done
 LOOPEOF
 chmod +x "$PROMPT_DIR/lead-loop.sh"
