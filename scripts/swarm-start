@@ -174,6 +174,11 @@ fi
 PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
 mkdir -p "$PROMPT_DIR"
 
+# Create a shared roster file that agents write their identity to on startup
+ROSTER_FILE="$PROMPT_DIR/roster.txt"
+echo "# Swarm roster — agents write their Agent Mail name here on startup" > "$ROSTER_FILE"
+echo "# Format: ROLE=AgentMailName" >> "$ROSTER_FILE"
+
 # === PA (Personal Assistant) system prompt ===
 cat > "$PROMPT_DIR/pa-system.txt" <<PAEOF
 You are the Personal Assistant (PA) for the $PROJECT_NAME swarm.
@@ -201,7 +206,9 @@ USEFUL COMMANDS:
 
 ON STARTUP:
 1. Call macro_start_session to register with Agent Mail
-2. Tell the user you're ready and briefly describe the swarm status
+2. Write your Agent Mail name to the roster file: echo "PA=YourAgentMailName" >> $PROMPT_DIR/roster.txt
+3. Read $PROMPT_DIR/roster.txt to see which other agents are registered
+4. Tell the user you're ready and briefly describe the swarm status
 
 When the user gives you instructions:
 - If it's about task prioritization or work assignment, relay to the lead agent via send_message
@@ -235,20 +242,29 @@ When assigning a task, send_message to the specific worker with the bead ID, des
 
 There is also a PA (Personal Assistant) agent that relays user instructions to you. Check for messages from the PA.
 
+AGENT DISCOVERY:
+The roster file at $PROMPT_DIR/roster.txt contains all registered agents.
+Read it to find Agent Mail names. Format: ROLE=AgentMailName (e.g., worker-1=ScarletDog).
+When sending messages, use the Agent Mail name from the roster, NOT "worker-1".
+
 STARTUP PROTOCOL (do this NOW, step by step):
 1. Read PROJECT.md to understand the project
 2. Read AGENTS.md for coordination rules
 3. Call macro_start_session to register with Agent Mail
-4. Run install_precommit_guard to set up the file reservation git hook
-5. If no beads exist yet, analyze PROJECT.md and create initial beads with br create
-6. Run br sync --flush-only after creating beads
-7. Run bv --robot-triage to get ranked recommendations
-8. Run bv --robot-plan to identify parallel execution tracks
-9. For each ready task, send_message via Agent Mail to assign it to a specific worker
-   - Spread work evenly across workers
-   - Include: bead ID, what to build, which files/directories to touch
-   - Workers will claim the bead themselves after receiving the assignment
-10. After assigning, begin the POLLING LOOP
+4. Write your Agent Mail name to the roster: echo "lead=YourAgentMailName" >> $PROMPT_DIR/roster.txt
+5. Run install_precommit_guard to set up the file reservation git hook
+6. If no beads exist yet, analyze PROJECT.md and create initial beads with br create
+7. Run br sync --flush-only after creating beads
+8. Run bv --robot-triage to get ranked recommendations
+9. Run bv --robot-plan to identify parallel execution tracks
+10. Read $PROMPT_DIR/roster.txt to find registered worker Agent Mail names
+11. If workers are not yet registered, wait 60 seconds and re-read the roster
+12. For each ready task, send_message via Agent Mail to assign it to a specific worker
+    - Use the worker's Agent Mail name from the roster (NOT "worker-1")
+    - Spread work evenly across workers
+    - Include: bead ID, what to build, which files/directories to touch
+    - Workers will claim the bead themselves after receiving the assignment
+13. After assigning, begin the POLLING LOOP
 
 POLLING LOOP (after initial assignment — REPEAT FOREVER):
 1. Sleep 90 seconds
@@ -338,12 +354,18 @@ for i in $(seq 1 "$WORKERS"); do
 You are worker agent $WORKER_NAME for the $PROJECT_NAME project.
 You are a CODER. You implement tasks assigned to you by the lead agent.
 
+AGENT DISCOVERY:
+The roster file at $PROMPT_DIR/roster.txt contains all registered agents.
+After registering, write your name there. Read it to find the lead agent's name for sending messages.
+
 STARTUP PROTOCOL (do this NOW, step by step):
 1. Read AGENTS.md for coordination rules
 2. Call macro_start_session to register with Agent Mail
-3. Check fetch_inbox for task assignments from the lead agent
-4. If you have an assignment, start working on it immediately
-5. If no assignment yet, run Bash(sleep 60), then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
+3. Write your Agent Mail name to the roster: echo "$WORKER_NAME=YourAgentMailName" >> $PROMPT_DIR/roster.txt
+4. Read $PROMPT_DIR/roster.txt to find the lead agent's Agent Mail name
+5. Check fetch_inbox for task assignments from the lead agent
+6. If you have an assignment, start working on it immediately
+7. If no assignment yet, run Bash(sleep 60), then check fetch_inbox again — the lead agent is creating tasks and will message you shortly
 
 POLLING LOOP (when waiting for work):
 - You MUST run Bash(sleep 60) between each poll. Do NOT skip the sleep
@@ -454,7 +476,7 @@ echo "${PANE_IDS[1]}" > "$PROMPT_DIR/lead-pane-id"
     sleep 120  # Wait for lead to finish initial startup
     while tmux has-session -t "$SESSION" 2>/dev/null; do
         sleep 90
-        tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
+        tmux send-keys -t "${PANE_IDS[1]}" "Continue your polling loop: read $PROMPT_DIR/roster.txt for agent names, check fetch_inbox for worker messages and PA instructions. Review any PRs submitted by workers, merge approved ones, assign new work to idle workers. Run bv --robot-triage if tasks completed." Enter 2>/dev/null
     done
 ) &
 POLL_PID=$!
