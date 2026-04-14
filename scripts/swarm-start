@@ -256,24 +256,24 @@ HANDLING br ERRORS:
 LEADEOF
 
 # === Lead agent loop script ===
-cat > "$PROMPT_DIR/lead-loop.sh" <<LOOPEOF
+cat > "$PROMPT_DIR/lead-loop.sh" <<'LOOPEOF'
 #!/bin/bash
 PROJECT_DIR="$1"
 PROMPT_DIR="$2"
-cd "\$PROJECT_DIR"
+cd "$PROJECT_DIR"
 
 echo "[lead-loop] Starting lead agent loop"
 
 # First run: full startup
-claude -p "First run. Read PROJECT.md and AGENTS.md. Register with Agent Mail. Create beads if none exist. Read the roster, assign tasks to workers. Do everything in your system prompt." \\
-    --append-system-prompt-file "\$PROMPT_DIR/lead-system.txt"
+claude -p "First run. Read PROJECT.md and AGENTS.md. Register with Agent Mail. Create beads if none exist. Read the roster, assign tasks to workers. Do everything in your system prompt." \
+    --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
 
 # Poll loop: runs forever
 while true; do
     sleep 90
     echo "[lead-loop] Polling..."
-    claude -p "Poll: check inbox, review PRs, merge approved, assign idle workers." \\
-        --append-system-prompt-file "\$PROMPT_DIR/lead-system.txt"
+    claude -p "Poll: check inbox, review PRs, merge approved, assign idle workers." \
+        --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
 done
 LOOPEOF
 chmod +x "$PROMPT_DIR/lead-loop.sh"
@@ -332,14 +332,13 @@ WORKEREOF
 
     cat > "$PROMPT_DIR/${WORKER_NAME}-loop.sh" <<WLOOPEOF
 #!/bin/bash
-PROJECT_DIR="$1"
-PROMPT_DIR="$2"
 WORKER_NAME="$WORKER_NAME"
 WORKTREE_DIR="$WORKTREE_DIR"
+PROMPT_DIR="$PROMPT_DIR"
 
 echo "[\$WORKER_NAME] Starting worker loop"
 
-# Wait for worktree to exist (initial --worktree creates it)
+# Wait for worktree to exist
 while [ ! -d "\$WORKTREE_DIR" ]; do
     sleep 5
 done
@@ -351,7 +350,6 @@ claude -p "First run. Register with Agent Mail, check inbox for tasks, check br 
 
 # Poll loop
 while true; do
-    # Check for completion signal — longer sleep after completing a task
     if [ -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done" ]; then
         rm -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done"
         echo "[\$WORKER_NAME] Task complete. Fresh context for next task."
