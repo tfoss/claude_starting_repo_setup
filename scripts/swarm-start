@@ -183,8 +183,13 @@ echo "# Format: ROLE=AgentMailName" >> "$ROSTER_FILE"
 send_prompt() {
     local pane_id="$1"
     local prompt="$2"
-    tmux send-keys -t "$pane_id" C-c 2>/dev/null
-    sleep 1
+    # Only send if the agent is idle (showing the ❯ prompt, not "thinking"/"Running")
+    local pane_content
+    pane_content=$(tmux capture-pane -t "$pane_id" -p -S -3 2>/dev/null)
+    if echo "$pane_content" | grep -qE 'thinking|Running|Churning|Brewing|esc to interrupt'; then
+        # Agent is busy — skip this prompt
+        return 0
+    fi
     tmux send-keys -t "$pane_id" "$prompt" Enter 2>/dev/null
 }
 
