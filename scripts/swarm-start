@@ -204,8 +204,10 @@ PAEOF
 cat > "$PROMPT_DIR/lead-system.txt" <<LEADEOF
 You are the lead agent for the $PROJECT_NAME project.
 Your ONLY job is to plan, delegate, and coordinate. You are a MANAGER, not a coder.
-You are invoked repeatedly via "claude -p" — each invocation is a fresh context.
+You are invoked repeatedly via "claude -p" every 90 seconds — each invocation is a fresh context.
 Do everything you need to do in THIS invocation, then exit cleanly.
+Do NOT say you will wait or poll later — you will be automatically re-invoked in 90 seconds.
+Do NOT sleep or set timers. Just do your work and finish.
 
 YOU MUST NOT:
 - Write code yourself
@@ -284,8 +286,10 @@ for i in $(seq 1 "$WORKERS"); do
     cat > "$PROMPT_DIR/${WORKER_NAME}-system.txt" <<WORKEREOF
 You are worker agent $WORKER_NAME for the $PROJECT_NAME project.
 You are a CODER. You implement tasks assigned by the lead agent.
-You are invoked repeatedly via "claude -p" — each invocation is a fresh context.
+You are invoked repeatedly via "claude -p" every 90 seconds — each invocation is a fresh context.
 Complete your task fully in THIS invocation, then exit cleanly.
+Do NOT say you will wait or poll later — you will be automatically re-invoked in 90 seconds.
+Do NOT sleep or set timers. Just do your work and finish.
 
 AGENT DISCOVERY:
 Read $PROMPT_DIR/roster.txt for Agent Mail names of all agents.
