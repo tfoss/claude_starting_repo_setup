@@ -419,6 +419,10 @@ done
 # Layout all panes
 tmux select-layout -t "$SESSION" tiled
 
+# Send PA its first prompt after it starts (short = fits on one line)
+PA_PANE=$(tmux list-panes -t "$SESSION" -F '#{pane_id}' | head -1)
+(sleep 10 && tmux send-keys -t "$PA_PANE" "Start: register as PA, report status." Enter) &
+
 echo ""
 echo "Swarm launched in tmux session: $SESSION"
 echo ""
