@@ -179,6 +179,15 @@ ROSTER_FILE="$PROMPT_DIR/roster.txt"
 echo "# Swarm roster — agents write their Agent Mail name here on startup" > "$ROSTER_FILE"
 echo "# Format: ROLE=AgentMailName" >> "$ROSTER_FILE"
 
+# Send a prompt to a claude pane reliably — clear buffer, send text, double-Enter to submit
+send_prompt() {
+    local pane_id="$1"
+    local prompt="$2"
+    tmux send-keys -t "$pane_id" C-c 2>/dev/null
+    sleep 1
+    tmux send-keys -t "$pane_id" "$prompt" Enter Enter 2>/dev/null
+}
+
 # === PA (Personal Assistant) system prompt ===
 cat > "$PROMPT_DIR/pa-system.txt" <<PAEOF
 You are the Personal Assistant (PA) for the $PROJECT_NAME swarm.
@@ -471,18 +480,6 @@ done
 
 # Create completion signal directory — agents touch files here when they finish a task
 mkdir -p "$PROMPT_DIR/signals"
-
-# Send a prompt to a claude pane reliably — clear buffer, send text, double-Enter to submit
-send_prompt() {
-    local pane_id="$1"
-    local prompt="$2"
-    # Clear any existing buffered input
-    tmux send-keys -t "$pane_id" C-c 2>/dev/null
-    sleep 1
-    # Send the prompt text, then double-Enter to submit
-    # (claude's TUI treats first Enter as newline for multi-line input, second Enter submits)
-    tmux send-keys -t "$pane_id" "$prompt" Enter Enter 2>/dev/null
-}
 
 # Function to restart an agent in a tmux pane with a fresh context
 restart_agent() {
