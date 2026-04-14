@@ -255,25 +255,44 @@ HANDLING br ERRORS:
 - Already-closed beads: just move on
 LEADEOF
 
+# === Shared jq filter for readable stream-json output ===
+cat > "$PROMPT_DIR/stream-filter.jq" <<'JQEOF'
+if .type == "assistant" then
+  (.message.content // [])[] |
+  if .type == "tool_use" then
+    "⚙ \(.name)(\(.input | to_entries | map("\(.key)=\(.value | tostring | .[0:60])") | join(", ")))"
+  elif .type == "text" then
+    .text
+  else empty end
+elif .type == "result" then
+  "✓ Done (\(.duration_ms/1000)s, \(.num_turns) turns)"
+else empty end
+JQEOF
+
 # === Lead agent loop script ===
 cat > "$PROMPT_DIR/lead-loop.sh" <<'LOOPEOF'
 #!/bin/bash
 PROJECT_DIR="$1"
 PROMPT_DIR="$2"
+FILTER="$PROMPT_DIR/stream-filter.jq"
 cd "$PROJECT_DIR"
 
-echo "[lead-loop] Starting lead agent loop"
+run_claude() {
+    claude -p "$1" \
+        --append-system-prompt-file "$PROMPT_DIR/lead-system.txt" \
+        --output-format stream-json --verbose 2>/dev/null \
+        | jq -r --unbuffered -f "$FILTER" 2>/dev/null
+}
 
-# First run: full startup
-claude -p "First run. Read PROJECT.md and AGENTS.md. Register with Agent Mail. Create beads if none exist. Read the roster, assign tasks to workers. Do everything in your system prompt." \
-    --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
+echo "[lead] Starting"
 
-# Poll loop: runs forever
+run_claude "First run. Read PROJECT.md and AGENTS.md. Register with Agent Mail. Create beads if none exist. Read the roster, assign tasks to workers."
+
 while true; do
     sleep 90
-    echo "[lead-loop] Polling..."
-    claude -p "Poll: check inbox, review PRs, merge approved, assign idle workers." \
-        --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
+    echo ""
+    echo "[lead] $(date '+%H:%M:%S') Polling..."
+    run_claude "Poll: check inbox, review PRs, merge approved, assign idle workers."
 done
 LOOPEOF
 chmod +x "$PROMPT_DIR/lead-loop.sh"
@@ -335,31 +354,35 @@ WORKEREOF
 WORKER_NAME="$WORKER_NAME"
 WORKTREE_DIR="$WORKTREE_DIR"
 PROMPT_DIR="$PROMPT_DIR"
+FILTER="\$PROMPT_DIR/stream-filter.jq"
 
-echo "[\$WORKER_NAME] Starting worker loop"
+run_claude() {
+    claude -p "\$1" \\
+        --append-system-prompt-file "\$PROMPT_DIR/\${WORKER_NAME}-system.txt" \\
+        --output-format stream-json --verbose 2>/dev/null \\
+        | jq -r --unbuffered -f "\$FILTER" 2>/dev/null
+}
 
-# Wait for worktree to exist
+echo "[\$WORKER_NAME] Starting"
+
 while [ ! -d "\$WORKTREE_DIR" ]; do
     sleep 5
 done
 cd "\$WORKTREE_DIR"
 
-# First run: register and check for work
-claude -p "First run. Register with Agent Mail, check inbox for tasks, check br ready. If you have a task, do the full WORK PROTOCOL." \\
-    --append-system-prompt-file "\$PROMPT_DIR/\${WORKER_NAME}-system.txt"
+run_claude "First run. Register with Agent Mail, check inbox for tasks. If you have a task, do the full WORK PROTOCOL."
 
-# Poll loop
 while true; do
     if [ -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done" ]; then
         rm -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done"
-        echo "[\$WORKER_NAME] Task complete. Fresh context for next task."
+        echo "[\$WORKER_NAME] Task complete."
     fi
 
     sleep 90
     cd "\$WORKTREE_DIR"
-    echo "[\$WORKER_NAME] Polling..."
-    claude -p "Poll: check fetch_inbox for tasks. If assigned, do full WORK PROTOCOL." \\
-        --append-system-prompt-file "\$PROMPT_DIR/\${WORKER_NAME}-system.txt"
+    echo ""
+    echo "[\$WORKER_NAME] \$(date '+%H:%M:%S') Polling..."
+    run_claude "Poll: check fetch_inbox for tasks. If assigned, do full WORK PROTOCOL."
 done
 WLOOPEOF
     chmod +x "$PROMPT_DIR/${WORKER_NAME}-loop.sh"
