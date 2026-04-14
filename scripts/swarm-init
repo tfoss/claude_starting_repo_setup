@@ -16,6 +16,7 @@ CODE_DIR="$HOME/code"
 WORKERS=2
 START=false
 PUBLIC=false
+IOS=false
 
 usage() {
     echo "Usage: swarm-init <project-name> [--workers N] [--start]"
@@ -26,6 +27,7 @@ usage() {
     echo "  --workers N   Number of worker agents (default: 2)"
     echo "  --start       Launch the swarm immediately after creation"
     echo "  --public      Create a public GitHub repo (default: private)"
+    echo "  --ios         Use iOS-specific CLAUDE.md (Swift/SwiftUI/Xcode)"
     echo "  --help        Show this help"
     exit 1
 }
@@ -49,6 +51,10 @@ while [ $# -gt 0 ]; do
             ;;
         --public)
             PUBLIC=true
+            shift
+            ;;
+        --ios)
+            IOS=true
             shift
             ;;
         --help)
@@ -82,6 +88,16 @@ echo "Creating project: $PROJECT_NAME"
 git clone "$TEMPLATE_REPO" "$PROJECT_DIR"
 
 cd "$PROJECT_DIR"
+
+# Use iOS template if requested
+if [ "$IOS" = true ]; then
+    echo "Using iOS CLAUDE.md and settings"
+    cp ios/CLAUDE.md CLAUDE.md
+    cp ios/.claude/settings.json .claude/settings.json
+fi
+
+# Clean up ios/ template directory (not needed in the new project)
+rm -rf ios/
 
 # Reset git history — fresh start
 rm -rf .git
