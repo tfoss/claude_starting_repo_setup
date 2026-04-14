@@ -174,8 +174,10 @@ fi
 PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
 mkdir -p "$PROMPT_DIR"
 
-# Create signal directory
+# Create signal directory and roster file
 mkdir -p "$PROMPT_DIR/signals"
+ROSTER_FILE="$PROMPT_DIR/roster.txt"
+echo "# Agent Mail names — written on first registration, read by all agents" > "$ROSTER_FILE"
 
 # === PA (Personal Assistant) system prompt ===
 cat > "$PROMPT_DIR/pa-system.txt" <<PAEOF
@@ -187,15 +189,17 @@ YOUR ROLE:
 - Check fetch_inbox to show the user status updates from lead/workers
 - Help the user review PRs, check bv triage, inspect beads status
 
-FIXED AGENT MAIL NAMES:
-- Your name: PA
-- Lead agent: Lead
-- Workers: $(for j in $(seq 1 $WORKERS); do echo -n "Worker${j} "; done)
-Use these names directly — they are stable across invocations.
+AGENT MAIL REGISTRATION:
+The roster file at $PROMPT_DIR/roster.txt maps roles to Agent Mail names.
+Agent Mail assigns random names — you cannot choose your own.
 
 ON STARTUP:
-1. Register with Agent Mail: call ensure_project with human_key="$PROJECT_DIR", then register_agent with project_key="$PROJECT_DIR" and agent_name="PA"
-2. Tell the user you're ready and the swarm status
+1. Call macro_start_session to register with Agent Mail — note the name it gives you
+2. Write your name to the roster: echo "PA=YourAssignedName" >> $PROMPT_DIR/roster.txt
+3. Read $PROMPT_DIR/roster.txt to find other agents' names (lead, workers)
+4. Tell the user you're ready and the swarm status
+
+When sending messages, read the roster to find the recipient's Agent Mail name.
 PAEOF
 
 # === Lead agent system prompt ===
@@ -220,15 +224,18 @@ YOU MUST:
 - Review PRs and merge completed worker branches into main
 - Re-triage and assign new work when tasks complete
 
-YOU HAVE $WORKERS WORKER AGENTS WITH FIXED AGENT MAIL NAMES:
-$(for j in $(seq 1 $WORKERS); do echo "- Worker${j} (in their own git worktree)"; done)
-The PA agent's name is "PA".
-YOUR name is "Lead".
-These names are FIXED — use them directly in send_message. No roster lookup needed.
+YOU HAVE $WORKERS WORKER AGENTS.
+
+AGENT MAIL REGISTRATION:
+The roster file at $PROMPT_DIR/roster.txt maps roles to Agent Mail names.
+Agent Mail assigns random names — you cannot choose your own.
 
 EACH INVOCATION, DO THIS:
-1. Register with Agent Mail using your fixed name: call ensure_project with human_key="$PROJECT_DIR", then register_agent with project_key="$PROJECT_DIR" and agent_name="Lead"
-2. Check fetch_inbox for agent_name="Lead" for messages from workers and the PA
+1. Read $PROMPT_DIR/roster.txt FIRST to check if you already have a registered name
+2. If your name is NOT in the roster yet: call macro_start_session to register, then write echo "lead=YourAssignedName" >> $PROMPT_DIR/roster.txt
+3. If your name IS already in the roster: call ensure_project, then register_agent with your existing name from the roster
+4. Read $PROMPT_DIR/roster.txt for worker and PA names
+5. Check fetch_inbox using YOUR name from the roster
 5. If a worker submitted a PR: review it (gh pr diff), approve or request changes
 6. If a PR is approved: gh pr merge, git pull, br sync --rebuild, assign next task
 7. If workers are idle (no in-progress tasks): run bv --robot-triage, assign ready beads
@@ -305,18 +312,19 @@ Complete your task fully in THIS invocation, then exit cleanly.
 Do NOT say you will wait or poll later — you will be automatically re-invoked in 90 seconds.
 Do NOT sleep or set timers. Just do your work and finish.
 
-FIXED AGENT MAIL NAMES:
-- Your name: Worker${i}
-- Lead agent: Lead
-- PA: PA
-- Other workers: $(for j in $(seq 1 $WORKERS); do [ "$j" -ne "$i" ] && echo -n "Worker${j} "; done)
-Use these names directly in send_message — they are stable across invocations.
+AGENT MAIL REGISTRATION:
+The roster file at $PROMPT_DIR/roster.txt maps roles to Agent Mail names.
+Agent Mail assigns random names — you cannot choose your own.
+Your role is: $WORKER_NAME
 
 EACH INVOCATION, DO THIS:
-1. Register with Agent Mail: call ensure_project with human_key="$PROJECT_DIR", then register_agent with project_key="$PROJECT_DIR" and agent_name="Worker${i}"
-2. Check fetch_inbox for agent_name="Worker${i}" for task assignments from Lead
-3. If no task, check br ready for available work
-4. If still no task, exit — you will be invoked again in 90 seconds
+1. Read $PROMPT_DIR/roster.txt to check if you ($WORKER_NAME) already have a registered name
+2. If your name is NOT in the roster yet: call macro_start_session to register, then write echo "$WORKER_NAME=YourAssignedName" >> $PROMPT_DIR/roster.txt
+3. If your name IS already in the roster: call ensure_project, then register_agent with your existing name from the roster
+4. Read $PROMPT_DIR/roster.txt for the lead agent's name
+5. Check fetch_inbox using YOUR name from the roster
+6. If no task, check br ready for available work
+7. If still no task, exit — you will be invoked again in 90 seconds
 
 WORK PROTOCOL — when you have a task:
 1. git pull origin main --rebase
@@ -332,7 +340,7 @@ WORK PROTOCOL — when you have a task:
 11. br sync --flush-only
 12. git add, commit, push: git push -u origin feature/<bead-id>-<short-desc>
 13. Create PR: gh pr create --title "<bead-id>: desc" --body "what you built"
-14. Send Agent Mail to "Lead" with PR number and bead ID
+14. Read $PROMPT_DIR/roster.txt for lead's name, send Agent Mail to lead with PR number and bead ID
 15. Touch signal: touch $PROMPT_DIR/signals/$WORKER_NAME-done
 
 IF LEAD REQUESTS PR CHANGES:
