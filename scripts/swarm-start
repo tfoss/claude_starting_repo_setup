@@ -322,9 +322,9 @@ EACH INVOCATION, DO THIS:
 2. If your name is NOT in the roster yet: call macro_start_session to register, then write echo "$WORKER_NAME=YourAssignedName" >> $PROMPT_DIR/roster.txt
 3. If your name IS already in the roster: call ensure_project, then register_agent with your existing name from the roster
 4. Read $PROMPT_DIR/roster.txt for the lead agent's name
-5. Check fetch_inbox using YOUR name from the roster
-6. If no task, check br ready for available work
-7. If still no task, exit — you will be invoked again in 90 seconds
+5. Check fetch_inbox using YOUR name from the roster for task assignments from the lead
+6. If no task in inbox, exit — you will be invoked again in 90 seconds
+Do NOT check br ready or pick up beads on your own. Only work on tasks assigned by the lead via Agent Mail.
 
 WORK PROTOCOL — when you have a task:
 1. git pull origin main --rebase
