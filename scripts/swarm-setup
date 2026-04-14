@@ -1,0 +1,63 @@
+#!/bin/bash
+# swarm-setup — Add swarm infrastructure to an existing project.
+#
+# Usage:
+#   swarm-setup <project-dir>
+
+set -euo pipefail
+
+TEMPLATE_REPO="$HOME/code/claude_starting_repo_setup"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: swarm-setup <project-dir>"
+    echo ""
+    echo "Adds AGENTS.md, settings.json, scripts, and beads to an existing project."
+    exit 1
+fi
+
+PROJECT_DIR="$(cd "$1" && pwd)"
+
+if [ ! -d "$PROJECT_DIR/.git" ]; then
+    echo "ERROR: $PROJECT_DIR is not a git repository"
+    exit 1
+fi
+
+echo "Setting up swarm infrastructure in: $PROJECT_DIR"
+
+# Copy swarm files
+mkdir -p "$PROJECT_DIR/.claude"
+mkdir -p "$PROJECT_DIR/scripts"
+
+cp "$TEMPLATE_REPO/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
+cp "$TEMPLATE_REPO/.claude/settings.json" "$PROJECT_DIR/.claude/settings.json"
+cp "$TEMPLATE_REPO/scripts/swarm-start" "$PROJECT_DIR/scripts/swarm-start"
+cp "$TEMPLATE_REPO/scripts/swarm-kill" "$PROJECT_DIR/scripts/swarm-kill"
+
+chmod +x "$PROJECT_DIR/scripts/swarm-start" "$PROJECT_DIR/scripts/swarm-kill"
+
+# Init beads if needed
+if [ ! -d "$PROJECT_DIR/.beads" ]; then
+    (cd "$PROJECT_DIR" && br init)
+fi
+
+# Check for PROJECT.md
+if [ ! -f "$PROJECT_DIR/PROJECT.md" ]; then
+    echo ""
+    echo "WARNING: No PROJECT.md found. The lead agent needs this to understand the project."
+    echo "Create one, or copy the template:"
+    echo "  cp $TEMPLATE_REPO/PROJECT.md.template $PROJECT_DIR/PROJECT.md"
+fi
+
+echo ""
+echo "Done. Files added:"
+echo "  AGENTS.md"
+echo "  .claude/settings.json"
+echo "  scripts/swarm-start"
+echo "  scripts/swarm-kill"
+echo "  .beads/ (if not present)"
+echo ""
+echo "Next: commit, then launch:"
+echo "  cd $PROJECT_DIR"
+echo "  git add AGENTS.md .claude/ scripts/ .beads/"
+echo "  git commit -m 'Add swarm infrastructure'"
+echo "  scripts/swarm-start . --workers 2"
