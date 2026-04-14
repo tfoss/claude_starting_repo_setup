@@ -174,73 +174,44 @@ fi
 PROMPT_DIR="/tmp/swarm-${PROJECT_NAME}"
 mkdir -p "$PROMPT_DIR"
 
-# Create a shared roster file that agents write their identity to on startup
+# Create a shared roster file for agent discovery
 ROSTER_FILE="$PROMPT_DIR/roster.txt"
-echo "# Swarm roster — agents write their Agent Mail name here on startup" > "$ROSTER_FILE"
-echo "# Format: ROLE=AgentMailName" >> "$ROSTER_FILE"
+echo "# Swarm roster: ROLE=AgentMailName" > "$ROSTER_FILE"
 
-# Send a prompt to a claude pane reliably — clear buffer, send text, double-Enter to submit
-send_prompt() {
-    local pane_id="$1"
-    local prompt="$2"
-    # Only send if the agent is idle (showing the ❯ prompt, not "thinking"/"Running")
-    local pane_content
-    pane_content=$(tmux capture-pane -t "$pane_id" -p -S -3 2>/dev/null)
-    if echo "$pane_content" | grep -qE 'thinking|Running|Churning|Brewing|esc to interrupt'; then
-        # Agent is busy — skip this prompt
-        return 0
-    fi
-    tmux send-keys -t "$pane_id" "$prompt" Enter 2>/dev/null
-}
+# Create signal directory
+mkdir -p "$PROMPT_DIR/signals"
 
 # === PA (Personal Assistant) system prompt ===
 cat > "$PROMPT_DIR/pa-system.txt" <<PAEOF
 You are the Personal Assistant (PA) for the $PROJECT_NAME swarm.
-You are the user's interface to the swarm. The user talks to you, and you relay to the lead agent and workers via Agent Mail.
+You are the user's interface to the swarm.
 
 YOUR ROLE:
 - Take instructions from the user and relay them to the lead agent via send_message
 - Check fetch_inbox to show the user status updates from lead/workers
 - Help the user review PRs, check bv triage, inspect beads status
-- Answer questions about the project state
 
-AVAILABLE AGENTS:
-- Lead agent (registered with Agent Mail — check fetch_inbox or list contacts to find its name)
-$(for j in $(seq 1 $WORKERS); do echo "- worker-$j"; done)
-
-USEFUL COMMANDS:
-- fetch_inbox — see messages from other agents
-- send_message — relay instructions to the lead or workers
-- br list --status=open — see all open tasks
-- br ready — see actionable tasks
-- bv --robot-triage — get ranked recommendations
-- gh pr list — see open PRs
-- gh pr diff <N> — review a PR
-- bv --robot-alerts — see blockers and issues
+AGENT DISCOVERY:
+Read $PROMPT_DIR/roster.txt for Agent Mail names of all agents.
 
 ON STARTUP:
 1. Call macro_start_session to register with Agent Mail
-2. Write your Agent Mail name to the roster file: echo "PA=YourAgentMailName" >> $PROMPT_DIR/roster.txt
-3. Read $PROMPT_DIR/roster.txt to see which other agents are registered
-4. Tell the user you're ready and briefly describe the swarm status
-
-When the user gives you instructions:
-- If it's about task prioritization or work assignment, relay to the lead agent via send_message
-- If it's about checking status, do it yourself and report back
-- If it's about a specific code question, check the codebase yourself or ask the relevant worker
+2. Write your name to roster: echo "PA=YourName" >> $PROMPT_DIR/roster.txt
+3. Read the roster and tell the user the swarm status
 PAEOF
 
 # === Lead agent system prompt ===
 cat > "$PROMPT_DIR/lead-system.txt" <<LEADEOF
 You are the lead agent for the $PROJECT_NAME project.
 Your ONLY job is to plan, delegate, and coordinate. You are a MANAGER, not a coder.
+You are invoked repeatedly via "claude -p" — each invocation is a fresh context.
+Do everything you need to do in THIS invocation, then exit cleanly.
 
 YOU MUST NOT:
 - Write code yourself
 - Use the Edit, Write, or Agent tool to implement features
 - Spawn sub-agents to do coding work
 - Claim tasks with br update --status=in_progress (that's for workers)
-- Do implementation work of any kind
 
 YOU MUST:
 - Create and organize beads (tasks) with br create
@@ -250,397 +221,189 @@ YOU MUST:
 - Re-triage and assign new work when tasks complete
 
 YOU HAVE $WORKERS WORKER AGENTS:
-$(for j in $(seq 1 $WORKERS); do echo "- worker-$j (in their own git worktree, on branch worker-$j)"; done)
-Workers register with Agent Mail on startup and poll their inbox for assignments.
-When assigning a task, send_message to the specific worker with the bead ID, description, expected files.
-
-There is also a PA (Personal Assistant) agent that relays user instructions to you. Check for messages from the PA.
+$(for j in $(seq 1 $WORKERS); do echo "- worker-$j (in their own git worktree)"; done)
 
 AGENT DISCOVERY:
-The roster file at $PROMPT_DIR/roster.txt contains all registered agents.
-Read it to find Agent Mail names. Format: ROLE=AgentMailName (e.g., worker-1=ScarletDog).
-When sending messages, use the Agent Mail name from the roster, NOT "worker-1".
+Read $PROMPT_DIR/roster.txt for Agent Mail names. Format: ROLE=AgentMailName.
+Use the Agent Mail name from the roster when sending messages, NOT "worker-1".
 
-STARTUP PROTOCOL (do this NOW, step by step):
-1. Read PROJECT.md to understand the project
-2. Read AGENTS.md for coordination rules
-3. Call macro_start_session to register with Agent Mail
-4. Write your Agent Mail name to the roster: echo "lead=YourAgentMailName" >> $PROMPT_DIR/roster.txt
-5. Run install_precommit_guard to set up the file reservation git hook
-6. If no beads exist yet, analyze PROJECT.md and create initial beads with br create
-7. Run br sync --flush-only after creating beads
-8. Run bv --robot-triage to get ranked recommendations
-9. Run bv --robot-plan to identify parallel execution tracks
-10. Read $PROMPT_DIR/roster.txt to find registered worker Agent Mail names
-11. If workers are not yet registered, wait 60 seconds and re-read the roster
-12. For each ready task, send_message via Agent Mail to assign it to a specific worker
-    - Use the worker's Agent Mail name from the roster (NOT "worker-1")
-    - Spread work evenly across workers
-    - Include: bead ID, what to build, which files/directories to touch
-    - Workers will claim the bead themselves after receiving the assignment
-13. After assigning, begin the POLLING LOOP
+EACH INVOCATION, DO THIS:
+1. Call macro_start_session to register with Agent Mail
+2. Write your name to roster: echo "lead=YourName" >> $PROMPT_DIR/roster.txt
+3. Read $PROMPT_DIR/roster.txt for worker names
+4. Check fetch_inbox for messages from workers and the PA
+5. If a worker submitted a PR: review it (gh pr diff), approve or request changes
+6. If a PR is approved: gh pr merge, git pull, br sync --rebuild, assign next task
+7. If workers are idle (no in-progress tasks): run bv --robot-triage, assign ready beads
+8. If no beads exist: read PROJECT.md, create initial beads with br create
+9. Run br sync --flush-only before finishing
 
-POLLING LOOP (after initial assignment — REPEAT FOREVER):
-1. Sleep 90 seconds
-2. Check fetch_inbox for worker messages and PA instructions
-3. If a worker says they created a PR:
-   a. REVIEW the PR (see REVIEW WORKFLOW below)
-   b. If approved, merge it (see MERGE WORKFLOW below)
-   c. If changes needed, send feedback via Agent Mail — be specific about what to fix
-   d. Run bv --robot-triage to re-rank remaining work
-   e. Assign newly unblocked tasks to idle workers via send_message
-4. If the PA sent instructions from the user, follow them
-5. If no messages, check bv --robot-alerts for blockers
-6. Go back to step 1
-
-NEVER stop this loop. NEVER wait for user input — the PA handles user interaction.
-If all tasks are complete, create new beads for the next phase of work and assign them.
-If all work is truly done, send a summary to the PA agent.
+REVIEW WORKFLOW:
+1. gh pr diff <N> — read the diff
+2. Check: matches bead? has tests? bugs? style?
+3. Issues: gh pr review <N> --request-changes --body "feedback" + Agent Mail to worker
+4. Good: gh pr review <N> --approve + gh pr merge <N> --merge
 
 RATE LIMITING:
-- If you get a 429 error from gh or any API, STOP polling — tell the PA you are rate limited and wait for the next polling loop prompt
-- Do NOT call gh pr list, gh pr diff, or gh pr merge repeatedly in quick succession
-- Only check PRs when a worker tells you via Agent Mail that a PR is ready — do not poll GitHub for PRs
-- Use Agent Mail as your primary notification channel, not GitHub API polling
-
-REVIEW WORKFLOW (do this for EVERY PR before merging):
-1. gh pr diff <PR-number> — read the full diff
-2. Check for:
-   - Does the code match what was requested in the bead?
-   - Are there tests? Do they cover the key functionality?
-   - Any obvious bugs, security issues, or missing error handling?
-   - Does it follow the project's code style (see CLAUDE.md)?
-   - Are there any files that shouldn't have been modified?
-3. If issues found:
-   - gh pr review <PR-number> --request-changes --body "specific feedback"
-   - Send Agent Mail message to the worker with what to fix
-   - Do NOT merge — wait for the worker to push fixes
-4. If the PR looks good:
-   - gh pr review <PR-number> --approve --body "brief summary of what looks good"
-   - Proceed to MERGE WORKFLOW
-
-MERGE WORKFLOW (only after PR is approved):
-1. gh pr merge <PR-number> --merge
-2. git pull origin main --rebase
-3. br sync --import-only
-4. br sync --flush-only
-5. git push (if beads changed)
-6. Notify the worker via send_message that their PR was merged
-7. After merging all pending PRs, signal for context refresh: touch $PROMPT_DIR/signals/lead-merged
-   Your session will restart with fresh context shortly — this is normal.
+- Only check GitHub when a worker says a PR is ready via Agent Mail
+- If you get a 429, stop and try next invocation
 
 HANDLING br ERRORS:
-If you see "FOREIGN KEY constraint failed" or "Database error" from br:
-- This usually means the bead was already closed, deleted, or the local DB is stale.
-- First, run: br sync --rebuild
-  This rebuilds the local SQLite DB entirely from the JSONL file (source of truth).
-- Then retry the command.
-- If a bead was already closed by another agent or in a previous session, do NOT retry closing it. Just move on.
-- If br list or br show works but br close fails on a specific bead, the bead may have been closed under a different ID or merged from another branch. Check: br show <id> to see its current status.
-- After fixing, always run: br sync --flush-only to export clean state to JSONL.
-- NEVER delete the .beads/*.db file — use br sync --rebuild instead.
+- "FOREIGN KEY constraint failed": run br sync --rebuild, retry once, skip if still fails
+- Already-closed beads: just move on
 LEADEOF
 
-# === Lead agent polling wrapper ===
-# This script runs the lead agent in a loop. Each iteration sends a prompt
-# via -p (which processes and exits), then sleeps and re-prompts.
-# --resume keeps the same session so context accumulates.
-cat > "$PROMPT_DIR/lead-loop.sh" <<'LOOPEOF'
+# === Lead agent loop script ===
+cat > "$PROMPT_DIR/lead-loop.sh" <<LOOPEOF
 #!/bin/bash
 PROJECT_DIR="$1"
 PROMPT_DIR="$2"
+cd "\$PROJECT_DIR"
 
-cd "$PROJECT_DIR"
+echo "[lead-loop] Starting lead agent loop"
 
-# Run lead agent interactively. We send the initial prompt via a named pipe
-# so claude starts working immediately but stays interactive for the polling
-# prompts we send via tmux send-keys from the outer loop.
+# First run: full startup
+claude -p "First run. Read PROJECT.md and AGENTS.md. Register with Agent Mail. Create beads if none exist. Read the roster, assign tasks to workers. Do everything in your system prompt." \\
+    --append-system-prompt-file "\$PROMPT_DIR/lead-system.txt"
 
-# Start claude in the background — it will wait at the > prompt
-# The outer script will send prompts via tmux send-keys to this pane
-exec claude --append-system-prompt-file "$PROMPT_DIR/lead-system.txt"
+# Poll loop: runs forever
+while true; do
+    sleep 90
+    echo "[lead-loop] Polling..."
+    claude -p "Poll: check inbox, review PRs, merge approved, assign idle workers." \\
+        --append-system-prompt-file "\$PROMPT_DIR/lead-system.txt"
+done
 LOOPEOF
 chmod +x "$PROMPT_DIR/lead-loop.sh"
 
-# === Worker system prompts ===
+# === Worker loop scripts ===
 for i in $(seq 1 "$WORKERS"); do
     WORKER_NAME="worker-$i"
+    WORKTREE_DIR="$PROJECT_DIR/.claude/worktrees/$WORKER_NAME"
 
     cat > "$PROMPT_DIR/${WORKER_NAME}-system.txt" <<WORKEREOF
 You are worker agent $WORKER_NAME for the $PROJECT_NAME project.
-You are a CODER. You implement tasks assigned to you by the lead agent.
+You are a CODER. You implement tasks assigned by the lead agent.
+You are invoked repeatedly via "claude -p" — each invocation is a fresh context.
+Complete your task fully in THIS invocation, then exit cleanly.
 
 AGENT DISCOVERY:
-The roster file at $PROMPT_DIR/roster.txt contains all registered agents.
-After registering, write your name there. Read it to find the lead agent's name for sending messages.
+Read $PROMPT_DIR/roster.txt for Agent Mail names of all agents.
 
-STARTUP PROTOCOL (do this NOW, step by step):
-1. Read AGENTS.md for coordination rules
-2. Call macro_start_session to register with Agent Mail
-3. Write your Agent Mail name to the roster: echo "$WORKER_NAME=YourAgentMailName" >> $PROMPT_DIR/roster.txt
-4. Read $PROMPT_DIR/roster.txt to find the lead agent's Agent Mail name
-5. Check fetch_inbox for task assignments from the lead agent
-6. If you have an assignment, start working on it immediately
-7. If no assignment yet, STOP and wait. An external system will prompt you again in 90 seconds. Do NOT poll on your own.
+EACH INVOCATION, DO THIS:
+1. Call macro_start_session to register with Agent Mail
+2. Write your name to roster: echo "$WORKER_NAME=YourName" >> $PROMPT_DIR/roster.txt
+3. Check fetch_inbox for task assignments from the lead agent
+4. If no task, check br ready for available work
+5. If still no task, exit — you will be invoked again in 90 seconds
 
-WHEN YOU RECEIVE A "Poll:" MESSAGE:
-This is the external polling system checking in. Just do:
-1. Check fetch_inbox for new task assignments
-2. Check br ready for available work
-3. If you have a task, start the WORK PROTOCOL below
-4. If no task, respond briefly "No tasks yet." and STOP. You will be prompted again.
-
-WORK PROTOCOL — when you receive a task via Agent Mail:
-1. Pull latest from main: git pull origin main --rebase (to get latest beads and code)
-2. Run br sync --rebuild to fully rebuild local DB from JSONL (this prevents FK errors)
-3. Claim it: br update <id> --status=in_progress
-   If this fails with FOREIGN KEY error, run br sync --rebuild again and retry ONCE. If it still fails, skip the br update and proceed with the work anyway — the bead status is not critical.
+WORK PROTOCOL — when you have a task:
+1. git pull origin main --rebase
+2. br sync --rebuild
+3. br update <id> --status=in_progress (skip if FK error)
 4. Reserve files: file_reservation_paths with exclusive=true
-5. Create a feature branch from your worktree: git checkout -b feature/<bead-id>-<short-description>
-6. Implement the task
+5. Create feature branch: git checkout -b feature/<bead-id>-<short-desc>
+6. Implement the task fully
 7. Write tests
-8. Run tests and make sure they pass
+8. Run tests — make sure they pass
 9. Release file reservations
-10. br close <id> — if FK error, run br sync --rebuild and retry once. If still fails, skip it.
+10. br close <id> (skip if FK error)
 11. br sync --flush-only
-12. git add, commit (reference bead ID in message), and push: git push -u origin feature/<bead-id>-<short-description>
-13. Create a PR: gh pr create --title "<bead-id>: short description" --body "## Summary\n- what you built\n- bead ID\n\n## Tests\n- what tests were added"
-14. Send completion message via Agent Mail to the lead agent — include the PR number/URL and bead ID
-15. Signal completion for context refresh: touch $PROMPT_DIR/signals/$WORKER_NAME-done
-16. STOP. Your session will restart with fresh context shortly — this is normal. Your work is safe in git.
+12. git add, commit, push: git push -u origin feature/<bead-id>-<short-desc>
+13. Create PR: gh pr create --title "<bead-id>: desc" --body "what you built"
+14. Send Agent Mail to lead with PR number and bead ID
+15. Touch signal: touch $PROMPT_DIR/signals/$WORKER_NAME-done
 
-IF THE LEAD REQUESTS CHANGES on your PR:
-1. Check fetch_inbox for the feedback
-2. Make the requested fixes on your feature branch
+IF LEAD REQUESTS PR CHANGES:
+1. Read feedback from fetch_inbox
+2. Fix issues on your feature branch
 3. Commit, push
-4. Reply via Agent Mail that fixes are pushed
-5. STOP and wait for the next poll prompt.
+4. Reply via Agent Mail
 
 IMPORTANT:
-- You are in a git worktree — your branch is $WORKER_NAME
-- Do NOT merge to main — the lead agent handles merges
-- Always reserve files before editing and release when done
-- If you hit a blocker, message the lead agent immediately via Agent Mail
-- Pull from main before each new task to get latest beads and merged code
-- If br commands fail with "FOREIGN KEY constraint failed" or "Database error":
-  Run br sync --rebuild to rebuild the DB from JSONL, then retry.
-  If a bead was already closed, just move on — do not retry closing it.
+- You are in a git worktree — do NOT merge to main
+- Always reserve files before editing, release when done
+- If br fails with FK error: br sync --rebuild, retry once, skip if still fails
 WORKEREOF
+
+    cat > "$PROMPT_DIR/${WORKER_NAME}-loop.sh" <<WLOOPEOF
+#!/bin/bash
+PROJECT_DIR="$1"
+PROMPT_DIR="$2"
+WORKER_NAME="$WORKER_NAME"
+WORKTREE_DIR="$WORKTREE_DIR"
+
+echo "[\$WORKER_NAME] Starting worker loop"
+
+# Wait for worktree to exist (initial --worktree creates it)
+while [ ! -d "\$WORKTREE_DIR" ]; do
+    sleep 5
+done
+cd "\$WORKTREE_DIR"
+
+# First run: register and check for work
+claude -p "First run. Register with Agent Mail, check inbox for tasks, check br ready. If you have a task, do the full WORK PROTOCOL." \\
+    --append-system-prompt-file "\$PROMPT_DIR/\${WORKER_NAME}-system.txt"
+
+# Poll loop
+while true; do
+    # Check for completion signal — longer sleep after completing a task
+    if [ -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done" ]; then
+        rm -f "\$PROMPT_DIR/signals/\${WORKER_NAME}-done"
+        echo "[\$WORKER_NAME] Task complete. Fresh context for next task."
+    fi
+
+    sleep 90
+    cd "\$WORKTREE_DIR"
+    echo "[\$WORKER_NAME] Polling..."
+    claude -p "Poll: check fetch_inbox for tasks. If assigned, do full WORK PROTOCOL." \\
+        --append-system-prompt-file "\$PROMPT_DIR/\${WORKER_NAME}-system.txt"
+done
+WLOOPEOF
+    chmod +x "$PROMPT_DIR/${WORKER_NAME}-loop.sh"
+done
+
+# --- Create initial worktrees for workers ---
+for i in $(seq 1 "$WORKERS"); do
+    WORKER_NAME="worker-$i"
+    WORKTREE_DIR="$PROJECT_DIR/.claude/worktrees/$WORKER_NAME"
+    if [ ! -d "$WORKTREE_DIR" ]; then
+        echo "  Creating worktree for $WORKER_NAME..."
+        git -C "$PROJECT_DIR" worktree add "$WORKTREE_DIR" -b "worktree-$WORKER_NAME" 2>/dev/null || true
+    fi
 done
 
 # --- Launch tmux session ---
 
-# Track pane IDs (% format) for reliable targeting later
-declare -a PANE_IDS
-
 # Pane 0: PA (interactive — this is where the user lives)
-tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}' > /dev/null
-PANE_IDS[0]=$(tmux list-panes -t "$SESSION" -F '#{pane_id}' | tail -1)
-tmux send-keys -t "${PANE_IDS[0]}" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
+tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
+sleep 1
+tmux send-keys -t "$SESSION" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$PROMPT_DIR/pa-system.txt'" Enter
 
-# Pane 1: Lead agent (autonomous loop)
-PANE_IDS[1]=$(tmux split-window -t "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}')
-tmux send-keys -t "${PANE_IDS[1]}" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
+# Pane 1: Lead agent (autonomous -p loop)
+tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
+sleep 1
+tmux send-keys -t "$SESSION" "bash '$PROMPT_DIR/lead-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
 
-# Panes 2+: Workers (staggered)
+# Panes 2+: Workers (autonomous -p loops, staggered)
 for i in $(seq 1 "$WORKERS"); do
     WORKER_NAME="worker-$i"
-    PANE_IDX=$(( i + 1 ))
-
-    echo "  Starting $WORKER_NAME (staggered ${i}0s delay)..."
-
-    PANE_IDS[$PANE_IDX]=$(tmux split-window -t "$SESSION" -c "$PROJECT_DIR" -PF '#{pane_id}')
-    tmux send-keys -t "${PANE_IDS[$PANE_IDX]}" "sleep ${i}0 && cd '$PROJECT_DIR' && claude --worktree '$WORKER_NAME' $MODEL_FLAG --append-system-prompt-file '$PROMPT_DIR/${WORKER_NAME}-system.txt'" Enter
+    tmux split-window -t "$SESSION" -c "$PROJECT_DIR"
+    sleep 1
+    tmux send-keys -t "$SESSION" "sleep ${i}0 && bash '$PROMPT_DIR/${WORKER_NAME}-loop.sh' '$PROJECT_DIR' '$PROMPT_DIR'" Enter
 done
 
 # Layout all panes
 tmux select-layout -t "$SESSION" tiled
 
-# Wait for all agents to start, then send initial prompts
-MAX_DELAY=$(( WORKERS * 10 + 15 ))
-echo ""
-echo "Waiting ${MAX_DELAY}s for all agents to start..."
-sleep "$MAX_DELAY"
-
-echo "Sending initial prompts..."
-
-# Send to PA
-send_prompt "${PANE_IDS[0]}" "Start: register with Agent Mail, report swarm status."
-
-# Send to lead
-sleep 2
-send_prompt "${PANE_IDS[1]}" "Start: run your STARTUP PROTOCOL now."
-
-# Send to workers
-for i in $(seq 1 "$WORKERS"); do
-    PANE_IDX=$(( i + 1 ))
-    sleep 2
-    send_prompt "${PANE_IDS[$PANE_IDX]}" "Start: run your STARTUP PROTOCOL now."
-done
-
-# Save pane IDs for the polling/restart loop
-for idx in "${!PANE_IDS[@]}"; do
-    echo "${PANE_IDS[$idx]}" >> "$PROMPT_DIR/pane-ids.txt"
-done
-
-# Create completion signal directory — agents touch files here when they finish a task
-mkdir -p "$PROMPT_DIR/signals"
-
-# Function to restart an agent in a tmux pane with a fresh context
-restart_agent() {
-    local pane_id="$1"
-    local role="$2"          # "lead" or "worker-N"
-    local system_file="$3"
-    local initial_prompt="$4"
-    local handoff_file="$PROMPT_DIR/${role}-handoff.txt"
-
-    echo "[swarm] Restarting $role for fresh context..."
-
-    # Ask the agent to write a handoff summary
-    send_prompt "$pane_id" "Write status to $handoff_file then /exit"
-    sleep 45  # Give it time to write the handoff and exit
-
-    # Force exit: try /exit, Enter (for prompts), Ctrl-C, escalating
-    for attempt in 1 2 3; do
-        tmux send-keys -t "$pane_id" "/exit" Enter 2>/dev/null
-        sleep 3
-        tmux send-keys -t "$pane_id" Enter 2>/dev/null
-        sleep 2
-
-        # Check if claude has exited by looking for shell prompt
-        local pane_content
-        pane_content=$(tmux capture-pane -t "$pane_id" -p 2>/dev/null | tail -3)
-        if echo "$pane_content" | grep -qE '^\$|^%|^>.*➜|^\(base\)'; then
-            echo "[swarm] $role exited cleanly"
-            break
-        fi
-
-        if [ "$attempt" -eq 3 ]; then
-            echo "[swarm] $role didn't exit cleanly, forcing..."
-            tmux send-keys -t "$pane_id" C-c 2>/dev/null
-            sleep 2
-            tmux send-keys -t "$pane_id" C-c 2>/dev/null
-            sleep 2
-        fi
-    done
-
-    # Restart claude in the pane
-    if [ "$role" = "lead" ]; then
-        tmux send-keys -t "$pane_id" "cd '$PROJECT_DIR' && claude --append-system-prompt-file '$system_file'" Enter
-    else
-        # Workers: cd into the existing worktree and run claude directly
-        local worktree_dir="$PROJECT_DIR/.claude/worktrees/$role"
-        tmux send-keys -t "$pane_id" "cd '$worktree_dir' && claude $MODEL_FLAG --append-system-prompt-file '$system_file'" Enter
-    fi
-
-    # Wait for claude to fully start — poll for the ">" prompt
-    echo "[swarm] Waiting for $role to start..."
-    for wait_i in $(seq 1 30); do
-        sleep 5
-        local pane_content
-        pane_content=$(tmux capture-pane -t "$pane_id" -p 2>/dev/null | tail -5)
-        # Look for claude's input prompt ("> " or "❯")
-        if echo "$pane_content" | grep -qE '^[>❯] |shortcuts'; then
-            echo "[swarm] $role is ready"
-            break
-        fi
-    done
-    sleep 2
-
-    # Send initial prompt + handoff
-    if [ -f "$handoff_file" ]; then
-        send_prompt "$pane_id" "$initial_prompt Read $handoff_file first."
-    else
-        send_prompt "$pane_id" "$initial_prompt"
-    fi
-
-    # Set a cooldown so the polling loop doesn't send prompts while agent is processing
-    touch "$PROMPT_DIR/signals/${role}-cooldown"
-    (sleep 120 && rm -f "$PROMPT_DIR/signals/${role}-cooldown") &
-}
-
-# Start background polling/restart loop
-(
-    sleep 120  # Wait for agents to finish initial startup
-
-    # Track cycles per agent for safety fallback restart
-    LEAD_CYCLES=0
-    for wi in $(seq 1 "$WORKERS"); do
-        eval "WORKER_${wi}_CYCLES=0"
-    done
-    MAX_CYCLES=30  # Force restart after ~45 min even without signal
-
-    while tmux has-session -t "$SESSION" 2>/dev/null; do
-        sleep 90
-        LEAD_CYCLES=$(( LEAD_CYCLES + 1 ))
-
-        # --- Check for worker task completions and restart if needed ---
-        for wi in $(seq 1 "$WORKERS"); do
-            WP=$(( wi + 1 ))
-            WNAME="worker-$wi"
-            SIGNAL_FILE="$PROMPT_DIR/signals/${WNAME}-done"
-
-            eval "WORKER_${wi}_CYCLES=\$(( WORKER_${wi}_CYCLES + 1 ))"
-            eval "WC=\$WORKER_${wi}_CYCLES"
-
-            # Skip if agent is in cooldown (just restarted)
-            if [ -f "$PROMPT_DIR/signals/${WNAME}-cooldown" ]; then
-                continue
-            fi
-
-            # Restart if: signal file exists OR safety fallback (too many cycles)
-            if [ -f "$SIGNAL_FILE" ] || [ "$WC" -ge "$MAX_CYCLES" ]; then
-                rm -f "$SIGNAL_FILE"
-                eval "WORKER_${wi}_CYCLES=0"
-
-                REASON="task completion"
-                [ "$WC" -ge "$MAX_CYCLES" ] && REASON="context refresh (${MAX_CYCLES} cycles)"
-
-                echo "[swarm] Restarting $WNAME ($REASON)"
-                restart_agent "${PANE_IDS[$WP]}" "$WNAME" "$PROMPT_DIR/${WNAME}-system.txt" \
-                    "Resumed. Run STARTUP PROTOCOL."
-                sleep 10
-            else
-                # Normal poll
-                send_prompt "${PANE_IDS[$WP]}" "Poll: check fetch_inbox for tasks."
-                sleep 5
-            fi
-        done
-
-        # --- Check lead for merge completions or safety fallback ---
-        # Skip if lead is in cooldown
-        if [ -f "$PROMPT_DIR/signals/lead-cooldown" ]; then
-            continue
-        fi
-
-        LEAD_SIGNAL="$PROMPT_DIR/signals/lead-merged"
-        if [ -f "$LEAD_SIGNAL" ] || [ "$LEAD_CYCLES" -ge "$MAX_CYCLES" ]; then
-            rm -f "$LEAD_SIGNAL"
-            REASON="PR merge"
-            [ "$LEAD_CYCLES" -ge "$MAX_CYCLES" ] && REASON="context refresh (${MAX_CYCLES} cycles)"
-            LEAD_CYCLES=0
-
-            echo "[swarm] Restarting lead ($REASON)"
-            restart_agent "${PANE_IDS[1]}" "lead" "$PROMPT_DIR/lead-system.txt" \
-                    "Resumed. Run STARTUP PROTOCOL."
-            sleep 15
-        else
-            # Normal poll
-            send_prompt "${PANE_IDS[1]}" "Poll: check inbox, review PRs, assign work."
-        fi
-    done
-) &
-POLL_PID=$!
-echo "$POLL_PID" > "$PROMPT_DIR/poll-loop.pid"
-
 echo ""
 echo "Swarm launched in tmux session: $SESSION"
 echo ""
 echo "Panes:"
-echo "  0 = PA (your interactive agent)"
-echo "  1 = Lead (autonomous, polled every 90s)"
+echo "  0 = PA (interactive — talk to this one)"
+echo "  1 = Lead (autonomous -p loop, polls every 90s)"
 for i in $(seq 1 "$WORKERS"); do
-    echo "  $(( i + 1 )) = worker-$i"
+    echo "  $(( i + 1 )) = worker-$i (autonomous -p loop)"
 done
 echo ""
 echo "Commands:"
