@@ -20,6 +20,7 @@ set -euo pipefail
 
 WORKERS=2
 WORKER_MODEL=""
+TRACKER=br
 AGENT_MAIL_PORT=8765
 AGENT_MAIL_HEALTH="http://127.0.0.1:${AGENT_MAIL_PORT}/api/health"
 
@@ -31,6 +32,7 @@ usage() {
     echo "Options:"
     echo "  --workers N     Number of worker agents (default: 2)"
     echo "  --model MODEL   Model for worker agents (default: same as lead)"
+    echo "  --tracker T     Issue tracker: br (default) or bd"
     echo "  --help          Show this help"
     exit 1
 }
@@ -50,6 +52,10 @@ while [ $# -gt 0 ]; do
             ;;
         --model)
             WORKER_MODEL="$2"
+            shift 2
+            ;;
+        --tracker)
+            TRACKER="$2"
             shift 2
             ;;
         --help)
@@ -78,9 +84,20 @@ if ! command -v claude &>/dev/null; then
     exit 1
 fi
 
-if ! command -v br &>/dev/null; then
-    echo "ERROR: br (beads_rust) not found. Install: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash"
+if ! command -v "$TRACKER" &>/dev/null; then
+    echo "ERROR: $TRACKER not found."
     exit 1
+fi
+
+# Set tracker-specific sync commands for use in system prompts
+if [ "$TRACKER" = "bd" ]; then
+    SYNC_FLUSH="bd sync"
+    SYNC_IMPORT="bd sync"
+    SYNC_REBUILD="bd sync"
+else
+    SYNC_FLUSH="br sync --flush-only"
+    SYNC_IMPORT="br sync --import-only"
+    SYNC_REBUILD="br sync --rebuild"
 fi
 
 if ! command -v bv &>/dev/null; then
@@ -94,7 +111,7 @@ fi
 
 if [ ! -d "$PROJECT_DIR/.beads" ]; then
     echo "Initializing beads workspace..."
-    (cd "$PROJECT_DIR" && br init)
+    (cd "$PROJECT_DIR" && $TRACKER init)
 fi
 
 # --- Agent Mail ---
@@ -215,10 +232,10 @@ YOU MUST NOT:
 - Write code yourself
 - Use the Edit, Write, or Agent tool to implement features
 - Spawn sub-agents to do coding work
-- Claim tasks with br update --status=in_progress (that's for workers)
+- Claim tasks with $TRACKER update --status=in_progress (that's for workers)
 
 YOU MUST:
-- Create and organize beads (tasks) with br create
+- Create and organize beads (tasks) with $TRACKER create
 - Assign tasks to worker agents via Agent Mail send_message
 - Monitor worker progress via fetch_inbox
 - Review PRs and merge completed worker branches into main
@@ -237,10 +254,10 @@ EACH INVOCATION, DO THIS:
 4. Read $PROMPT_DIR/roster.txt for worker and PA names
 5. Check fetch_inbox using YOUR name from the roster
 5. If a worker submitted a PR: review it (gh pr diff), approve or request changes
-6. If a PR is approved: gh pr merge, git pull, br sync --rebuild, assign next task
+6. If a PR is approved: gh pr merge, git pull, $SYNC_REBUILD, assign next task
 7. If workers are idle (no in-progress tasks): run bv --robot-triage, assign ready beads
-8. If no beads exist: read PROJECT.md, create initial beads with br create
-9. Run br sync --flush-only before finishing
+8. If no beads exist: read PROJECT.md, create initial beads with $TRACKER create
+9. Run $SYNC_FLUSH before finishing
 
 REVIEW WORKFLOW:
 1. gh pr diff <N> — read the diff
@@ -252,8 +269,8 @@ RATE LIMITING:
 - Only check GitHub when a worker says a PR is ready via Agent Mail
 - If you get a 429, stop and try next invocation
 
-HANDLING br ERRORS:
-- "FOREIGN KEY constraint failed": run br sync --rebuild, retry once, skip if still fails
+HANDLING BEADS ERRORS:
+- "FOREIGN KEY constraint failed": run $SYNC_REBUILD, retry once, skip if still fails
 - Already-closed beads: just move on
 LEADEOF
 
@@ -324,20 +341,20 @@ EACH INVOCATION, DO THIS:
 4. Read $PROMPT_DIR/roster.txt for the lead agent's name
 5. Check fetch_inbox using YOUR name from the roster for task assignments from the lead
 6. If no task in inbox, exit — you will be invoked again in 90 seconds
-Do NOT check br ready or pick up beads on your own. Only work on tasks assigned by the lead via Agent Mail.
+Do NOT check $TRACKER ready or pick up beads on your own. Only work on tasks assigned by the lead via Agent Mail.
 
 WORK PROTOCOL — when you have a task:
 1. git pull origin main --rebase
-2. br sync --rebuild
-3. br update <id> --status=in_progress (skip if FK error)
+2. $SYNC_REBUILD
+3. $TRACKER update <id> --status=in_progress (skip if FK error)
 4. Reserve files: file_reservation_paths with exclusive=true
 5. Create feature branch: git checkout -b feature/<bead-id>-<short-desc>
 6. Implement the task fully
 7. Write tests
 8. Run tests — make sure they pass
 9. Release file reservations
-10. br close <id> (skip if FK error)
-11. br sync --flush-only
+10. $TRACKER close <id> (skip if FK error)
+11. $SYNC_FLUSH
 12. git add, commit, push: git push -u origin feature/<bead-id>-<short-desc>
 13. Create PR: gh pr create --title "<bead-id>: desc" --body "what you built"
 14. Read $PROMPT_DIR/roster.txt for lead's name, send Agent Mail to lead with PR number and bead ID
@@ -352,7 +369,7 @@ IF LEAD REQUESTS PR CHANGES:
 IMPORTANT:
 - You are in a git worktree — do NOT merge to main
 - Always reserve files before editing, release when done
-- If br fails with FK error: br sync --rebuild, retry once, skip if still fails
+- If $TRACKER fails with FK error: $SYNC_REBUILD, retry once, skip if still fails
 WORKEREOF
 
     cat > "$PROMPT_DIR/${WORKER_NAME}-loop.sh" <<WLOOPEOF

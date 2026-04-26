@@ -17,6 +17,7 @@ WORKERS=2
 START=false
 PUBLIC=false
 IOS=false
+TRACKER=br
 
 usage() {
     echo "Usage: swarm-init <project-name> [--workers N] [--start]"
@@ -28,6 +29,7 @@ usage() {
     echo "  --start       Launch the swarm immediately after creation"
     echo "  --public      Create a public GitHub repo (default: private)"
     echo "  --ios         Use iOS-specific CLAUDE.md (Swift/SwiftUI/Xcode)"
+    echo "  --tracker T   Issue tracker: br (default) or bd"
     echo "  --help        Show this help"
     exit 1
 }
@@ -56,6 +58,14 @@ while [ $# -gt 0 ]; do
         --ios)
             IOS=true
             shift
+            ;;
+        --tracker)
+            TRACKER="$2"
+            if [ "$TRACKER" != "br" ] && [ "$TRACKER" != "bd" ]; then
+                echo "ERROR: --tracker must be 'br' or 'bd'"
+                exit 1
+            fi
+            shift 2
             ;;
         --help)
             usage
@@ -99,6 +109,25 @@ fi
 # Clean up ios/ template directory (not needed in the new project)
 rm -rf ios/
 
+# Switch tracker from br to bd if requested
+if [ "$TRACKER" = "bd" ]; then
+    echo "Using bd (dolt-backed beads) as issue tracker"
+    for f in CLAUDE.md AGENTS.md; do
+        # Swap binary name (word-boundary safe)
+        sed -i '' 's/\bbr\b/bd/g' "$f"
+        # Fix sync commands — bd has just `bd sync`, no flags
+        sed -i '' 's/bd sync --flush-only/bd sync/g' "$f"
+        sed -i '' 's/bd sync --import-only/bd sync/g' "$f"
+        sed -i '' 's/bd sync --rebuild/bd sync/g' "$f"
+    done
+    # Fix the install line in CLAUDE.md
+    sed -i '' 's|curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh.*|Install bd: brew tap steveyegge/beads \&\& brew install beads|' CLAUDE.md
+    # Fix the "no external dependencies" line
+    sed -i '' 's/No dolt server, no database server.*/Requires a running dolt server. Install dolt: brew install dolt/g' CLAUDE.md
+    # Fix the section header
+    sed -i '' 's/Issue Tracking — Beads (bd)/Issue Tracking — Beads (bd — Dolt-backed)/g' CLAUDE.md
+fi
+
 # Reset git history — fresh start
 rm -rf .git
 git init
@@ -107,8 +136,10 @@ git commit -m "Initial commit from claude_starting_repo_setup template"
 
 # Initialize beads if not already done
 if [ ! -f ".beads/metadata.json" ]; then
-    br init
-    br sync --flush-only
+    $TRACKER init
+    if [ "$TRACKER" = "br" ]; then
+        br sync --flush-only
+    fi
     git add .beads/
     git commit -m "Initialize beads workspace"
 fi

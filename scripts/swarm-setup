@@ -7,15 +7,37 @@
 set -euo pipefail
 
 TEMPLATE_REPO="$HOME/code/claude_starting_repo_setup"
+TRACKER=br
 
 if [ $# -lt 1 ]; then
-    echo "Usage: swarm-setup <project-dir>"
+    echo "Usage: swarm-setup <project-dir> [--tracker br|bd]"
     echo ""
     echo "Adds AGENTS.md, settings.json, scripts, and beads to an existing project."
+    echo ""
+    echo "Options:"
+    echo "  --tracker T   Issue tracker: br (default) or bd"
     exit 1
 fi
 
 PROJECT_DIR="$(cd "$1" && pwd)"
+shift
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --tracker)
+            TRACKER="$2"
+            if [ "$TRACKER" != "br" ] && [ "$TRACKER" != "bd" ]; then
+                echo "ERROR: --tracker must be 'br' or 'bd'"
+                exit 1
+            fi
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
 if [ ! -d "$PROJECT_DIR/.git" ]; then
     echo "ERROR: $PROJECT_DIR is not a git repository"
@@ -35,9 +57,20 @@ cp "$TEMPLATE_REPO/scripts/swarm-kill" "$PROJECT_DIR/scripts/swarm-kill"
 
 chmod +x "$PROJECT_DIR/scripts/swarm-start" "$PROJECT_DIR/scripts/swarm-kill"
 
+# Switch tracker from br to bd if requested
+if [ "$TRACKER" = "bd" ]; then
+    echo "Using bd (dolt-backed beads) as issue tracker"
+    for f in "$PROJECT_DIR/AGENTS.md"; do
+        sed -i '' 's/\bbr\b/bd/g' "$f"
+        sed -i '' 's/bd sync --flush-only/bd sync/g' "$f"
+        sed -i '' 's/bd sync --import-only/bd sync/g' "$f"
+        sed -i '' 's/bd sync --rebuild/bd sync/g' "$f"
+    done
+fi
+
 # Init beads if needed
 if [ ! -d "$PROJECT_DIR/.beads" ]; then
-    (cd "$PROJECT_DIR" && br init)
+    (cd "$PROJECT_DIR" && $TRACKER init)
 fi
 
 # Check for PROJECT.md
