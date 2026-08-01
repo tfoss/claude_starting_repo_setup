@@ -57,14 +57,22 @@ cp "$TEMPLATE_REPO/scripts/swarm-kill" "$PROJECT_DIR/scripts/swarm-kill"
 
 chmod +x "$PROJECT_DIR/scripts/swarm-start" "$PROJECT_DIR/scripts/swarm-kill"
 
-# Switch tracker from br to bd if requested
-if [ "$TRACKER" = "bd" ]; then
-    echo "Using bd (dolt-backed beads) as issue tracker"
+# AGENTS.md is written bd-first (the default tracker) — only rewrite it
+# when br (beads_rust) was explicitly requested.
+if [ "$TRACKER" = "br" ]; then
+    echo "Using br (beads_rust) as issue tracker"
     for f in "$PROJECT_DIR/AGENTS.md"; do
-        sed -i '' 's/\bbr\b/bd/g' "$f"
-        sed -i '' 's/bd sync --flush-only/bd sync/g' "$f"
-        sed -i '' 's/bd sync --import-only/bd sync/g' "$f"
-        sed -i '' 's/bd sync --rebuild/bd sync/g' "$f"
+        [ -f "$f" ] || continue
+
+        # Context-specific rewrites first (order matters, see swarm-init).
+        sed -i '' 's/Sync the bead database: `bd sync`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
+        sed -i '' 's/`bd sync` — sync the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
+        sed -i '' 's/bd sync.*before commit.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
+        sed -i '' 's/bd sync.*after `git pull`.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+
+        # Generic binary-name swap. BSD sed has no \b — [[:<:]]/[[:>:]] is
+        # the real word-boundary syntax.
+        sed -i '' 's/[[:<:]]bd[[:>:]]/br/g' "$f"
     done
 fi
 

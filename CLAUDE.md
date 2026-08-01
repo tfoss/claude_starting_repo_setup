@@ -47,23 +47,23 @@ These rules override any conflicting defaults. Follow them exactly:
 - Use **feature branches** for new work. Branch from `main`.
 - Branch naming: `feature/<description>`, `fix/<description>`, `refactor/<description>`.
 
-## Issue Tracking — Beads (br)
+## Issue Tracking — Beads (bd — Dolt-backed)
 
-"Beads" is the issue/task tracker for this project. The CLI command is `br` (beads_rust). When someone says "beads", "issues", or "tasks", they mean `br`. To see all issues, run `br list`. To see ready work, run `br ready`.
+"Beads" is the issue/task tracker for this project. The CLI command is `bd` (Dolt-backed beads). When someone says "beads", "issues", or "tasks", they mean `bd`. To see all issues, run `bd list`. To see ready work, run `bd ready`.
 
 - Create a bead for each discrete task, bug, or feature.
 - Reference bead IDs in commit messages when applicable.
 - Update bead status as work progresses.
-- The `.beads` directory is in the repo root. If `br` cannot find it, run `br init` first.
-- Use `br list`, `br show`, `br create`, etc. — always use `br`, not `beads` or `bd`.
-- **`br create` syntax**: The title is a **positional argument**, NOT a `-t` flag. `-t` sets the issue **type** (bug/feature/task). Correct usage:
-  - `br create "My issue title"` — title is the first positional arg
-  - `br create "My title" -d "Description here"` — with description
-  - `br create "My title" -t feature -d "Description"` — with type and description
-  - **WRONG**: `br create -t "My title"` — this sets type to "My title", not the title
-- **Syncing**: `br` uses SQLite locally and JSONL (`.beads/issues.jsonl`) for git-portable storage. After making changes, run `br sync --flush-only` to export to JSONL, then commit the `.beads/` directory. After pulling, run `br sync --import-only` to update your local DB.
-- If `br` is not installed, install it: `curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash`
-- **No external dependencies** — `br` is a self-contained binary. No dolt server, no database server. Works the same locally and in Docker.
+- The `.beads` directory is in the repo root. If `bd` cannot find it, run `bd init` first.
+- Use `bd list`, `bd show`, `bd create`, etc. — always use `bd`, not `beads`.
+- **`bd create` syntax**: The title is a **positional argument**, NOT a `-t` flag. `-t` sets the issue **type** (bug/feature/task). Correct usage:
+  - `bd create "My issue title"` — title is the first positional arg
+  - `bd create "My title" -d "Description here"` — with description
+  - `bd create "My title" -t feature -d "Description"` — with type and description
+  - **WRONG**: `bd create -t "My title"` — this sets type to "My title", not the title
+- **Syncing**: `bd` is Dolt-backed. After making changes, run `bd sync` to persist and share them. After pulling, run `bd sync` again to pick up remote updates.
+- If `bd` is not installed, install it: `brew tap steveyegge/beads && brew install beads` (also `brew install dolt` if not bundled)
+- **Requires a running Dolt server.** If you'd rather avoid operating one, this project can switch to `br` (beads_rust — SQLite + JSONL, no server) via `scripts/swarm-setup --tracker br`; see README.md "Picking an Issue Tracker".
 
 ## Environment
 

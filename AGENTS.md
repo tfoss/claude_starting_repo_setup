@@ -14,7 +14,7 @@ The lead agent is responsible for planning, task routing, and coordination. The 
 - Merges completed work
 
 ### Worker Agents
-Worker agents execute tasks assigned by the lead (or self-claimed from `br ready`). Workers:
+Worker agents execute tasks assigned by the lead (or self-claimed from `bd ready`). Workers:
 - Claim tasks, reserve files, do the work, release, and report back
 - Communicate via Agent Mail, not by modifying shared files
 - Never merge to main without lead approval
@@ -27,7 +27,7 @@ At the start of every session:
 
 1. **Register with Agent Mail.** Call `macro_start_session` with this project's absolute path. This gives you an identity (e.g., "GreenCastle"), registers you, and fetches your inbox.
 2. **Check your inbox.** Read any messages from other agents. Acknowledge messages that require it.
-3. **Check beads.** Run `br ready` to see what work is available.
+3. **Check beads.** Run `bd ready` to see what work is available.
 
 ---
 
@@ -191,9 +191,9 @@ dcg explain "git reset --hard"    # Detailed decision trace
 
 ## Claiming Work
 
-1. Run `br ready` to see open, unblocked tasks.
+1. Run `bd ready` to see open, unblocked tasks.
 2. Pick a task (or use the one assigned to you by the lead).
-3. Run `br update <id> --status=in_progress` to claim it.
+3. Run `bd update <id> --status=in_progress` to claim it.
 4. **Send a message** to all agents announcing what you're working on. Include the bead ID and which files/directories you expect to touch.
 5. **Reserve the files** you plan to edit using `file_reservation_paths` with `exclusive=true`. Use glob patterns for directories (e.g., `src/auth/**`). Set a reasonable TTL.
 6. If reservations conflict, coordinate with the holding agent via Agent Mail. Do not proceed with edits on conflicted files.
@@ -220,7 +220,7 @@ dcg explain "git reset --hard"    # Detailed decision trace
 Use Agent Mail for all inter-agent communication:
 
 - **Starting work:** Send a message announcing the bead ID and files you'll touch.
-- **Blocking issues:** If your task depends on another agent's work, message them directly and add a dependency in beads (`br dep add <your-id> <their-id>`).
+- **Blocking issues:** If your task depends on another agent's work, message them directly and add a dependency in beads (`bd dep add <your-id> <their-id>`).
 - **Completing work:** Send a message when you finish. Include what changed and any downstream tasks now unblocked.
 - **Acknowledge** messages that have `ack_required=true`. Other agents may be waiting on your response.
 
@@ -228,15 +228,15 @@ Use Agent Mail for all inter-agent communication:
 
 1. Ensure all tests pass.
 2. Release your file reservations.
-3. Close the bead: `br close <id>`
-4. Sync beads to JSONL: `br sync --flush-only`
+3. Close the bead: `bd close <id>`
+4. Sync the bead database: `bd sync`
 5. Commit everything (code + `.beads/` changes).
 6. Push your feature branch.
 7. Create a PR: `gh pr create --title "<bead-id>: description" --body "summary of changes"`
 8. Send a completion message via Agent Mail to the lead agent — include the **PR number/URL** and bead ID.
 9. Wait for the lead agent to review and merge (check `fetch_inbox` for feedback).
 10. If the lead requests changes, fix them, push, and notify via Agent Mail.
-11. Once merged, check `br ready` for the next available task.
+11. Once merged, check `bd ready` for the next available task.
 
 ## Code Review (Lead Agent)
 
@@ -258,7 +258,7 @@ Before ending any session:
 
 1. `git status` — check for uncommitted work.
 2. Stage and commit any remaining changes.
-3. `br sync --flush-only` — export beads to JSONL.
+3. `bd sync` — sync the bead database.
 4. `git add .beads/` — stage beads changes.
 5. Commit and push.
 6. Release all file reservations.
@@ -272,17 +272,17 @@ Before ending any session:
 
 ## Quick Reference
 
-### Beads (br)
+### Beads (bd)
 ```bash
-br ready                    # Show actionable work
-br list --status=open       # All open issues
-br show <id>                # Full details + dependencies
-br create "Title" -d "..."  # Create new task
-br update <id> --status=in_progress  # Claim task
-br close <id>               # Complete task
-br dep add <id> <blocks-id> # Add dependency
-br sync --flush-only        # Export DB to JSONL for git
-br sync --import-only       # Import JSONL after git pull
+bd ready                    # Show actionable work
+bd list --status=open       # All open issues
+bd show <id>                # Full details + dependencies
+bd create "Title" -d "..."  # Create new task
+bd update <id> --status=in_progress  # Claim task
+bd close <id>               # Complete task
+bd dep add <id> <blocks-id> # Add dependency
+bd sync                     # Sync database — run after changes, before commit
+bd sync                     # Sync database — run after `git pull`
 ```
 
 ### BV (lead agent)

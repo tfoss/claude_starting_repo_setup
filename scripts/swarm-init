@@ -114,23 +114,30 @@ fi
 # Clean up ios/ template directory (not needed in the new project)
 rm -rf ios/
 
-# Switch tracker from br to bd if requested
-if [ "$TRACKER" = "bd" ]; then
-    echo "Using bd (dolt-backed beads) as issue tracker"
+# CLAUDE.md and AGENTS.md are written bd-first (the default tracker) —
+# only rewrite them when br (beads_rust) was explicitly requested.
+if [ "$TRACKER" = "br" ]; then
+    echo "Using br (beads_rust) as issue tracker"
     for f in CLAUDE.md AGENTS.md; do
-        # Swap binary name (word-boundary safe)
-        sed -i '' 's/\bbr\b/bd/g' "$f"
-        # Fix sync commands — bd has just `bd sync`, no flags
-        sed -i '' 's/bd sync --flush-only/bd sync/g' "$f"
-        sed -i '' 's/bd sync --import-only/bd sync/g' "$f"
-        sed -i '' 's/bd sync --rebuild/bd sync/g' "$f"
+        [ -f "$f" ] || continue
+
+        # Context-specific rewrites first — these consume phrases that the
+        # generic word swap below must not also touch.
+        sed -i '' 's/Issue Tracking — Beads (bd — Dolt-backed)/Issue Tracking — Beads (br)/' "$f"
+        sed -i '' 's/(Dolt-backed beads)/(beads_rust)/' "$f"
+        sed -i '' 's|is Dolt-backed\. After making changes.*pick up remote updates\.|uses SQLite locally and JSONL (`.beads/issues.jsonl`) for git-portable storage. After making changes, run `br sync --flush-only` to export to JSONL, then commit the `.beads/` directory. After pulling, run `br sync --import-only` to update your local DB.|' "$f"
+        sed -i '' 's@If `bd` is not installed, install it:.*@If `br` is not installed, install it: `curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash`@' "$f"
+        sed -i '' 's/\*\*Requires a running Dolt server\.\*\*.*/**No external dependencies** — `br` is a self-contained binary. No dolt server, no database server. Works the same locally and in Docker./' "$f"
+        sed -i '' 's/Sync the bead database: `bd sync`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
+        sed -i '' 's/`bd sync` — sync the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
+        sed -i '' 's/bd sync.*before commit.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
+        sed -i '' 's/bd sync.*after `git pull`.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+
+        # Generic binary-name swap for everything else (bd list, bd ready,
+        # bd create, bd show, bd update, bd close, bd dep add, bd init...).
+        # BSD sed has no \b — [[:<:]]/[[:>:]] is the real word-boundary syntax.
+        sed -i '' 's/[[:<:]]bd[[:>:]]/br/g' "$f"
     done
-    # Fix the install line in CLAUDE.md
-    sed -i '' 's|curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh.*|Install bd: brew tap steveyegge/beads \&\& brew install beads|' CLAUDE.md
-    # Fix the "no external dependencies" line
-    sed -i '' 's/No dolt server, no database server.*/Requires a running dolt server. Install dolt: brew install dolt/g' CLAUDE.md
-    # Fix the section header
-    sed -i '' 's/Issue Tracking — Beads (bd)/Issue Tracking — Beads (bd — Dolt-backed)/g' CLAUDE.md
 fi
 
 # Reset git history — fresh start
