@@ -17,7 +17,7 @@ WORKERS=2
 START=false
 PUBLIC=false
 IOS=false
-TRACKER=br
+TRACKER=bd
 
 usage() {
     echo "Usage: swarm-init <project-name> [--workers N] [--start]"
@@ -29,7 +29,12 @@ usage() {
     echo "  --start       Launch the swarm immediately after creation"
     echo "  --public      Create a public GitHub repo (default: private)"
     echo "  --ios         Use iOS-specific CLAUDE.md (Swift/SwiftUI/Xcode)"
-    echo "  --tracker T   Issue tracker: br (default) or bd"
+    echo "  --tracker T   Issue tracker: bd (default) or br"
+    echo "                  bd = beads (original): Dolt-backed, richer branching/diff."
+    echo "                       Default; pick if you already run Dolt."
+    echo "                  br = beads_rust: SQLite + JSONL, single binary, no server."
+    echo "                       Pick for zero-infra setups or Docker-only environments."
+    echo "                  See README.md \"Picking an Issue Tracker\" for full details."
     echo "  --help        Show this help"
     exit 1
 }

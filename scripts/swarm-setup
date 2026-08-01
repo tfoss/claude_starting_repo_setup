@@ -7,7 +7,7 @@
 set -euo pipefail
 
 TEMPLATE_REPO="$HOME/code/claude_starting_repo_setup"
-TRACKER=br
+TRACKER=bd
 
 if [ $# -lt 1 ]; then
     echo "Usage: swarm-setup <project-dir> [--tracker br|bd]"
@@ -15,7 +15,7 @@ if [ $# -lt 1 ]; then
     echo "Adds AGENTS.md, settings.json, scripts, and beads to an existing project."
     echo ""
     echo "Options:"
-    echo "  --tracker T   Issue tracker: br (default) or bd"
+    echo "  --tracker T   Issue tracker: bd (default, Dolt-backed) or br (beads_rust)"
     exit 1
 fi
 

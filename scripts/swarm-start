@@ -9,7 +9,7 @@
 # Prerequisites:
 #   - tmux (brew install tmux)
 #   - claude (Claude Code CLI)
-#   - br (beads_rust)
+#   - bd (beads, default) or br (beads_rust)
 #   - bv (beads_viewer)
 #   - Agent Mail MCP server running on port 8765
 #
@@ -20,7 +20,7 @@ set -euo pipefail
 
 WORKERS=2
 WORKER_MODEL=""
-TRACKER=br
+TRACKER=bd
 AGENT_MAIL_PORT=8765
 AGENT_MAIL_HEALTH="http://127.0.0.1:${AGENT_MAIL_PORT}/api/health"
 
@@ -32,7 +32,7 @@ usage() {
     echo "Options:"
     echo "  --workers N     Number of worker agents (default: 2)"
     echo "  --model MODEL   Model for worker agents (default: same as lead)"
-    echo "  --tracker T     Issue tracker: br (default) or bd"
+    echo "  --tracker T     Issue tracker: bd (default) or br"
     echo "  --help          Show this help"
     exit 1
 }
