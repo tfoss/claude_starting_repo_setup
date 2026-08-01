@@ -2,6 +2,10 @@
 
 A template repository with sensible defaults for developing projects with Claude Code as an autonomous agent.
 
+> **Working on this repo itself** (not a project generated from it)? See
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — root `CLAUDE.md`/`AGENTS.md` are template
+> payload shipped to downstream projects, not instructions for this repo.
+
 ## What's Included
 
 - **`CLAUDE.md`** — Development guidelines that Claude Code follows: highly functionalized code, thorough testing, composable architecture, documentation standards, git workflow, and beads-based issue tracking.
