@@ -1,54 +1,187 @@
-# Dockerfile.claude — Docker image for running Claude Code agents
-# Provides parity with a local macOS dev environment.
+# Dockerfile.claude — Shared base image for running Claude Code agents.
 #
-# Usage:
-#   docker build -f Dockerfile.claude -t claude-agent .
-#   docker run -it -d \
-#     -v ~/code/my-project:/workspace \
-#     -v $HOME/.claude-docker:/home/claude-user/.claude \
-#     -v $HOME/.claude-docker/.claude.json:/home/claude-user/.claude.json \
-#     -v $HOME/.gh-docker:/home/claude-user/.config/gh \
-#     --name agent-myproject \
-#     claude-agent
+# This is the SHARED BASE used by all projects. Per-project images should:
+#   FROM claude-agent:latest
+#   # ... project-specific additions (pnpm, playwright deps, etc.)
+#
+# Build:
+#   docker build -f Dockerfile.claude \
+#     --build-arg HOST_UID=$(id -u) \
+#     --build-arg HOST_GID=$(id -g) \
+#     -t claude-agent:latest .
+#
+# Image contents:
+#   - Base: python:3.12-trixie (Debian 13, glibc 2.39+)
+#   - Python 3.12
+#   - Node 22 (via NodeSource)
+#   - Claude Code (Node-based CLI)
+#   - bd (Steve Yegge's Dolt-backed beads issue tracker)
+#   - DCG (Destructive Command Guard) — real working binary, not a shim
+#   - GitHub CLI for git auth
+#   - uv (Astral's Python package manager)
+#   - tini (PID 1, reaps zombie subprocesses cleanly)
+#   - Shell tools: ripgrep, fd, bat, fzf, jq, tmux
+#
+# Pin versions at build time (override to upgrade deliberately):
+#   docker build --build-arg CLAUDE_CODE_VERSION=2.1.143 ...
+#
+# Image philosophy:
+#   - Reproducible: pin versions of fast-moving tools
+#   - Trixie (Debian 13) for glibc 2.39+ (required by DCG aarch64 binary)
+#   - Non-root user (claude-user), UID matched to host via build args so
+#     bind-mounted files have correct ownership on Colima/Linux Docker
+#   - tini as PID 1 to handle subprocess reaping (claude spawns many children)
+#   - Entrypoint handles git worktree fix-up, gh auth, and DCG hook reconciliation
 
-FROM node:20-slim
+FROM python:3.12-trixie
 
-# System dependencies + GitHub CLI
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    sudo \
-    python3 \
-    python3-pip \
-    python3-venv \
-    jq \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+# ---------------------------------------------------------------------------
+# Build args (pin to known-good versions; override at build time to upgrade)
+# ---------------------------------------------------------------------------
+ARG CLAUDE_CODE_VERSION=latest
+ARG BD_INSTALL_REF=main
+ARG DCG_INSTALL_REF=main
+ARG NODE_MAJOR=22
+
+# Host UID/GID matching: required for bind-mounted file ownership to work
+# correctly under Colima and Linux Docker (Docker Desktop on macOS handles
+# this differently, but matching is harmless there).
+# Defaults to 501 (typical macOS user UID); override to your real id -u / id -g.
+ARG HOST_UID=501
+ARG HOST_GID=20
+
+# ---------------------------------------------------------------------------
+# System packages
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        # Core
+        ca-certificates \
+        curl \
+        git \
+        sudo \
+        gnupg \
+        tini \
+        # Build toolchain (some pip packages have C extensions)
+        build-essential \
+        # Shell quality-of-life and agent-friendly tools
+        jq \
+        ripgrep \
+        fd-find \
+        bat \
+        fzf \
+        tmux \
+        less \
+        unzip \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Debian packages 'fd-find' as 'fdfind' and 'bat' as 'batcat' to avoid namespace
+# clashes. Symlink them to their canonical names for ergonomic CLI use.
+RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+ && ln -sf /usr/bin/batcat /usr/local/bin/bat
+
+# ---------------------------------------------------------------------------
+# Node.js (from NodeSource — Debian's nodejs is far behind current LTS)
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+# Suppress npm update banner during builds and per-user invocations.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
+# ---------------------------------------------------------------------------
+# GitHub CLI (separate apt repo)
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
        > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y gh \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code
-RUN npm install -g @anthropic-ai/claude-code
+# ---------------------------------------------------------------------------
+# uv — Astral's fast Python package manager.
+# Installed system-wide; users can `uv venv` per project.
+# ---------------------------------------------------------------------------
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-# Install beads_rust (br) — self-contained binary, no dolt/database server needed
-RUN curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash
+# ---------------------------------------------------------------------------
+# Claude Code (Node-based CLI from npm)
+# ---------------------------------------------------------------------------
+RUN if [ "$CLAUDE_CODE_VERSION" = "latest" ]; then \
+        npm install -g @anthropic-ai/claude-code; \
+    else \
+        npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
+    fi \
+ && npm cache clean --force
 
-# Install conda (miniforge for broad arch support)
-RUN curl -L -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh \
-    && bash /tmp/miniforge.sh -b -p /opt/conda \
-    && rm /tmp/miniforge.sh
-ENV PATH="/opt/conda/bin:${PATH}"
+# ---------------------------------------------------------------------------
+# bd — Steve Yegge's Dolt-backed beads issue tracker.
+# Install script handles platform detection + checksum verification.
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/${BD_INSTALL_REF}/scripts/install.sh \
+        | bash
 
-# Create non-root user (Claude Code refuses to run as root)
-RUN useradd -m -s /bin/bash claude-user \
-    && echo "claude-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# ---------------------------------------------------------------------------
+# DCG — Destructive Command Guard (Rust-based PreToolUse hook for Claude Code).
+# --system installs to /usr/local/bin (every user has it on PATH).
+# --no-configure skips DCG's auto-config of agent settings.json;
+#   our entrypoint.sh handles that reconciliation explicitly.
+# --quiet keeps build output manageable.
+#
+# Requires glibc 2.39+ for the prebuilt aarch64 binary, which is why this
+# image targets trixie (Debian 13) rather than bookworm (Debian 12).
+# ---------------------------------------------------------------------------
+RUN curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/${DCG_INSTALL_REF}/install.sh" \
+        | bash -s -- --system --no-configure --quiet
 
-# Entrypoint: configure git credentials from mounted gh config
+# ---------------------------------------------------------------------------
+# Non-root user (Claude Code refuses to run as root).
+# UID/GID matched to host via build args so bind-mounted files have correct
+# ownership on Colima/Linux Docker. -o (allow non-unique) covers the macOS
+# 501 = staff group case where 501 may already exist as `daemon`.
+# Passwordless sudo for development convenience — acceptable inside a
+# container with limited mounts.
+# ---------------------------------------------------------------------------
+RUN if ! getent group "$HOST_GID" >/dev/null; then \
+        groupadd -g "$HOST_GID" claude-group; \
+    fi \
+ && useradd -o -m -u "$HOST_UID" -g "$HOST_GID" -s /bin/bash claude-user \
+ && echo "claude-user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+ && mkdir -p /home/claude-user/.claude /home/claude-user/.config/gh \
+ && chown -R "$HOST_UID:$HOST_GID" /home/claude-user
+
+# ---------------------------------------------------------------------------
+# Pre-register the DCG hook in a baseline settings.json.
+# This file ships baked into the image at /etc/claude-defaults/. At runtime,
+# the entrypoint reconciles this with any user-mounted ~/.claude/settings.json.
+# ---------------------------------------------------------------------------
+RUN mkdir -p /etc/claude-defaults \
+ && cat > /etc/claude-defaults/settings.json <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "dcg" }
+        ]
+      }
+    ]
+  }
+}
+JSON
+
+# ---------------------------------------------------------------------------
+# Entrypoint: git worktree fix-up, gh auth setup, DCG hook verification
+# ---------------------------------------------------------------------------
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER claude-user
 WORKDIR /workspace
-ENTRYPOINT ["entrypoint.sh"]
+
+# tini as PID 1 reaps zombie subprocesses cleanly when claude spawns children.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]
