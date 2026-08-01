@@ -1,0 +1,45 @@
+# PROJECT.md — Project Brief
+
+> Copy this file to `PROJECT.md` and fill in each section for your project.
+
+## One-liner
+
+<!-- What is this iOS app in a single sentence? -->
+
+## Problem
+
+<!-- Why does this app need to exist? What pain point does it solve? (2-3 sentences) -->
+
+## Core Behaviors
+
+### Must-have
+<!-- What must the app do? Use "User can..." statements. -->
+-
+
+### Nice-to-have
+<!-- What would be great but isn't essential for v1? -->
+-
+
+## Inputs / Outputs
+
+### Inputs
+<!-- What data does the app consume? APIs, files, user input, sensors, etc. -->
+-
+
+### Outputs
+<!-- What does the app produce? Screens, files, API calls, notifications, etc. -->
+-
+
+## Constraints
+
+- **Platform**: iOS <!-- minimum version, e.g. iOS 17+ -->
+- **Language**: Swift
+- **UI Framework**: SwiftUI <!-- or UIKit, or mixed -->
+- **Dependencies**: <!-- list any required third-party packages -->
+- **Device support**: <!-- iPhone only? iPad? Universal? -->
+- **Other**: <!-- performance targets, offline support, accessibility requirements, etc. -->
+
+## Non-goals
+
+<!-- What is explicitly OUT of scope? Be specific — this prevents over-engineering. -->
+-
