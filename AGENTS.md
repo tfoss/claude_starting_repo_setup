@@ -229,7 +229,7 @@ Use Agent Mail for all inter-agent communication:
 1. Ensure all tests pass.
 2. Release your file reservations.
 3. Close the bead: `bd close <id>`
-4. Sync the bead database: `bd sync`
+4. Publish the bead database: `bd dolt push`
 5. Commit everything (code + `.beads/` changes).
 6. Push your feature branch.
 7. Create a PR: `gh pr create --title "<bead-id>: description" --body "summary of changes"`
@@ -258,7 +258,7 @@ Before ending any session:
 
 1. `git status` — check for uncommitted work.
 2. Stage and commit any remaining changes.
-3. `bd sync` — sync the bead database.
+3. `bd dolt push` — publish the bead database.
 4. `git add .beads/` — stage beads changes.
 5. Commit and push.
 6. Release all file reservations.
@@ -281,8 +281,9 @@ bd create "Title" -d "..."  # Create new task
 bd update <id> --status=in_progress  # Claim task
 bd close <id>               # Complete task
 bd dep add <id> <blocks-id> # Add dependency
-bd sync                     # Sync database — run after changes, before commit
-bd sync                     # Sync database — run after `git pull`
+bd bootstrap                # Fresh clone/worktree: clone existing Dolt history
+bd dolt pull                # Pull others' changes into an existing local database
+bd dolt push                # Publish local changes
 ```
 
 ### BV (lead agent)

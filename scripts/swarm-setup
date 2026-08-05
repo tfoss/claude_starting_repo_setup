@@ -65,10 +65,11 @@ if [ "$TRACKER" = "br" ]; then
         [ -f "$f" ] || continue
 
         # Context-specific rewrites first (order matters, see swarm-init).
-        sed -i '' 's/Sync the bead database: `bd sync`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
-        sed -i '' 's/`bd sync` — sync the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
-        sed -i '' 's/bd sync.*before commit.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
-        sed -i '' 's/bd sync.*after `git pull`.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+        sed -i '' 's/Publish the bead database: `bd dolt push`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
+        sed -i '' 's/`bd dolt push` — publish the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
+        sed -i '' '/^bd bootstrap.*Fresh clone\/worktree/d' "$f"
+        sed -i '' 's/bd dolt pull.*Pull others.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+        sed -i '' 's/bd dolt push.*Publish local changes.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
 
         # Generic binary-name swap. BSD sed has no \b — [[:<:]]/[[:>:]] is
         # the real word-boundary syntax.

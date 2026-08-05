@@ -26,6 +26,11 @@ A template repository with sensible defaults for developing projects with Claude
 
 Prerequisites: `tmux`, `claude`, `bd` (or `br`), `bv`, Agent Mail MCP server.
 
+- `brew install tmux`
+- `brew install beads` (or `br` — see "Picking an Issue Tracker" below)
+- `brew install dicklesworthstone/tap/bv` — graph-aware triage TUI the lead agent uses for `bv --robot-triage`; the swarm runs without it but the lead loses ranked recommendations
+- Agent Mail MCP server — `swarm-start` launches it automatically if `$HOME/code/mcp_agent_mail` exists and it isn't already running on port 8765
+
 ```bash
 # Create a new project from this template
 scripts/swarm-init my-app
@@ -48,20 +53,20 @@ The swarm launches a **lead agent** (triages with `bv`, assigns work via Agent M
 
 | | `bd` (beads, original) — **default** | `br` (beads_rust) |
 |---|---|---|
-| Backend | Dolt (versioned SQL database) | SQLite + JSONL files (git-portable) |
-| Install | `brew tap steveyegge/beads && brew install beads`, plus `brew install dolt` | `curl -fsSL .../install.sh \| bash` (single binary) |
-| External services | Requires a running dolt server | None |
-| Docker | Needs dolt networking set up | Works identically in/out of containers |
-| Sync model | One-shot: `bd sync` | Explicit: `br sync --flush-only`, `--import-only`, `--rebuild` |
+| Backend | Dolt, embedded in-process by default (versioned SQL database) | SQLite + JSONL files (git-portable) |
+| Install | `brew install beads` (Homebrew core, no tap needed — pulls in `dolt`/`icu4c` build deps automatically) | `curl -fsSL .../install.sh \| bash` (single binary) |
+| External services | None for the default embedded mode — no separate `dolt` install, no server, no ports | None |
+| Docker | Works identically in/out of containers (embedded mode) | Works identically in/out of containers |
+| Sync model | `bd dolt push` / `bd dolt pull` / `bd bootstrap` (fresh clone) against a Dolt remote riding on `origin` — no `bd sync` command | Explicit: `br sync --flush-only`, `--import-only`, `--rebuild` |
 
 **Pick `bd` if (default):**
 - You want the original `beads` toolchain with Dolt's branching/merging model for issue history.
-- You're already running a Dolt server or comfortable operating one.
 - You want richer query/diff semantics on issue data.
+- Note: `bd init --server` (multi-writer, one shared live database) needs a separately-installed `dolt` CLI — not needed for this repo's worktree-per-agent swarm model, where embedded mode's one-writer-per-directory fits naturally.
 
 **Pick `br` if:**
 - You want zero infrastructure — a single binary, files in git, nothing else.
-- You're running agents in Docker or across machines and don't want to operate a database.
+- You're running agents in Docker or across machines and don't want an embedded database file.
 - You need identical behavior in and out of containers.
 
 Examples:
@@ -287,7 +292,7 @@ Override these to upgrade deliberately rather than picking up `latest` on every 
 
 The host and Docker should run the same `bd` version to avoid issue-store format drift.
 
-- **macOS host:** `brew tap steveyegge/beads && brew install beads` (also `brew install dolt` if not bundled)
+- **macOS host:** `brew install beads` (Homebrew core, no tap needed)
 - **Docker:** Uses the upstream `steveyegge/beads` install script during build — pin with `--build-arg BD_INSTALL_REF=<tag-or-sha>`
 
 Check both with `bd --version`. If they drift, rebuild the Docker image.

@@ -122,16 +122,20 @@ if [ "$TRACKER" = "br" ]; then
         [ -f "$f" ] || continue
 
         # Context-specific rewrites first — these consume phrases that the
-        # generic word swap below must not also touch.
-        sed -i '' 's/Issue Tracking — Beads (bd — Dolt-backed)/Issue Tracking — Beads (br)/' "$f"
-        sed -i '' 's/(Dolt-backed beads)/(beads_rust)/' "$f"
-        sed -i '' 's|is Dolt-backed\. After making changes.*pick up remote updates\.|uses SQLite locally and JSONL (`.beads/issues.jsonl`) for git-portable storage. After making changes, run `br sync --flush-only` to export to JSONL, then commit the `.beads/` directory. After pulling, run `br sync --import-only` to update your local DB.|' "$f"
+        # generic word swap below must not also touch. bd (Dolt) and br
+        # (SQLite+JSONL) have genuinely different storage/sync models, so
+        # these lines can't be produced by a blind word swap.
+        sed -i '' 's/The CLI command is `bd`\./The CLI command is `br` (beads_rust)./' "$f"
+        sed -i '' 's@run `bd init` first (or `bd bootstrap` — see Syncing below)\.@run `br init` first.@' "$f"
+        sed -i '' 's@\*\*Storage\*\*: `bd` uses an embedded.*@**Storage**: `br` uses SQLite locally and JSONL (`.beads/issues.jsonl`) for git-portable storage.@' "$f"
+        sed -i '' 's@\*\*Syncing — there is no `bd sync` command\.\*\*.*@**Syncing**: Run `br sync --flush-only` to export to JSONL, then commit `.beads/`. After pulling, run `br sync --import-only`.@' "$f"
         sed -i '' 's@If `bd` is not installed, install it:.*@If `br` is not installed, install it: `curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash`@' "$f"
-        sed -i '' 's/\*\*Requires a running Dolt server\.\*\*.*/**No external dependencies** — `br` is a self-contained binary. No dolt server, no database server. Works the same locally and in Docker./' "$f"
-        sed -i '' 's/Sync the bead database: `bd sync`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
-        sed -i '' 's/`bd sync` — sync the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
-        sed -i '' 's/bd sync.*before commit.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
-        sed -i '' 's/bd sync.*after `git pull`.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+        sed -i '' 's/This project can switch to `br`.*/**No external dependencies** — `br` is a self-contained binary. Works the same locally and in Docker./' "$f"
+        sed -i '' 's/Publish the bead database: `bd dolt push`/Sync beads to JSONL: `br sync --flush-only`/' "$f"
+        sed -i '' 's/`bd dolt push` — publish the bead database\./`br sync --flush-only` — export beads to JSONL./' "$f"
+        sed -i '' '/^bd bootstrap.*Fresh clone\/worktree/d' "$f"
+        sed -i '' 's/bd dolt pull.*Pull others.*/br sync --import-only       # Import JSONL after git pull/' "$f"
+        sed -i '' 's/bd dolt push.*Publish local changes.*/br sync --flush-only        # Export DB to JSONL for git/' "$f"
 
         # Generic binary-name swap for everything else (bd list, bd ready,
         # bd create, bd show, bd update, bd close, bd dep add, bd init...).

@@ -34,26 +34,44 @@ template-repo-specific content to them (it would leak into every generated proje
 
 ## The `bd`/`br` tracker templating
 
-`swarm-init` and `swarm-setup` default to `--tracker bd` (Dolt-backed beads), and the checked-in
-`CLAUDE.md`/`AGENTS.md` text is written natively in `bd` terms to match — so the default path does
-**zero** rewriting. A `sed` pass only runs when `--tracker br` is explicitly requested, converting
-the `bd`-native text to `br` (beads_rust) wording on the fly. This used to run the other way (br as
-source-of-truth, rewritten to bd on the default path) until 2026-08-01, when it was flipped so the
-common case ships unmodified, checked-in text instead of always going through a sed pass.
+`swarm-init` and `swarm-setup` default to `--tracker bd`, and the checked-in `CLAUDE.md`/`AGENTS.md`
+text is written natively in `bd` terms to match — so the default path does **zero** rewriting. A
+`sed` pass only runs when `--tracker br` is explicitly requested, converting the `bd`-native text to
+`br` (beads_rust) wording on the fly.
+
+**`bd`'s real command surface (verified against the current release, 1.1.2, and its CLI reference —
+not assumed from an older/local install):**
+- Storage is **embedded** Dolt by default (`bd init`) — no separate `dolt` binary, no server, no
+  ports. `bd init --server` (a separate mode for multiple processes sharing one live database) does
+  need a standalone `dolt` install, but this repo's worktree-per-agent model never needs it: each
+  worktree is its own directory, so embedded mode's one-writer-per-directory is exactly right.
+- **There is no `bd sync` command.** Don't reintroduce it. The real commands are `bd dolt push`
+  (publish local changes), `bd dolt pull` (pull into an *existing* local database), and
+  `bd bootstrap` (fresh clone/worktree with no local database yet — clones the existing Dolt history
+  from the git remote rather than starting empty). `bd init` auto-wires git `origin` as the Dolt
+  remote.
+- `brew install beads` is in Homebrew **core** now — no `brew tap steveyegge/beads` needed. It pulls
+  in `dolt`/`icu4c` as build deps automatically.
+- A previous pass of this file (and of `CLAUDE.md`/`AGENTS.md`) got all three of these wrong — it
+  claimed `bd sync` was real, claimed embedded mode "requires a running Dolt server," and kept the
+  stale tap-based install line. The tell was a local `bd` binary that turned out to be a stale
+  pre-1.0, pre-Dolt-rewrite build; always check `bd --version` against the current Homebrew/GitHub
+  release before trusting local CLI behavior as ground truth for what these docs should say.
 
 The rewrite (`scripts/swarm-init` for `CLAUDE.md`+`AGENTS.md`, `scripts/swarm-setup` for
-`AGENTS.md` only) runs several **context-anchored** substitutions before a final generic pass,
-in this order (order matters — later steps must not consume text earlier steps still need to
-match):
+`AGENTS.md` only) runs several **context-anchored** substitutions before a final generic pass, in
+this order (order matters — later steps must not consume text earlier steps still need to match):
 
-1. The "Issue Tracking" section header, the `(Dolt-backed beads)` parenthetical, the Syncing
-   paragraph, the install-instructions line, and the "Requires a running Dolt server" bullet each
-   get matched by a unique anchor phrase and replaced wholesale — because `bd`'s one-command sync
-   model doesn't map 1:1 onto `br`'s three-flag model (`--flush-only`/`--import-only`/`--rebuild`),
-   a blind word swap can't produce correct `br` text for these lines.
-2. Two `bd sync` lines in AGENTS.md's quick-reference table are disambiguated by their trailing
-   comment text (`before commit` vs. `` after `git pull` ``) since both literally say `bd sync` —
-   the comment is the only thing that tells you which `br sync --*` flag it should become.
+1. The intro sentence's tool name, the ".beads directory" bullet's `bd init`/`bd bootstrap`
+   parenthetical, the Storage bullet, the Syncing bullet, the install-instructions line, and the
+   closing "switch to br" bullet each get matched by a unique anchor phrase and replaced wholesale —
+   because `bd`'s Dolt-remote model (`bd dolt push`/`pull`/`bootstrap`) doesn't map 1:1 onto `br`'s
+   flag-based model (`--flush-only`/`--import-only`), a blind word swap can't produce correct `br`
+   text for these lines.
+2. AGENTS.md's quick-reference table has three `bd` sync-related lines (`bd bootstrap`,
+   `bd dolt pull`, `bd dolt push`) that collapse to `br`'s two (`--import-only`/`--flush-only`) — the
+   `bd bootstrap` line is deleted outright (br's "fresh worktree" case is already covered by
+   `--import-only`), and the other two are matched by their distinct command text and replaced.
 3. A final generic word-boundary swap (`bd` → `br`) catches everything else (`bd list`, `bd ready`,
    `bd create`, `bd show`, `bd update`, `bd close`, `bd dep add`, `bd init`, section headers, etc).
 
@@ -68,6 +86,13 @@ If you touch the `bd`-flavored wording in `CLAUDE.md`/`AGENTS.md`/`ios/CLAUDE.md
 rewrite. In particular, avoid ever writing a single line that names *both* `bd` and `br` as CLI
 binaries (e.g. "use `bd`, not `br`") — the generic swap can't invert a line that mentions both
 tracker names without ambiguity; say only the current tracker's name and let the swap handle it.
+
+`scripts/swarm-start` has its own, non-sed tracker branch (`SYNC_BOOTSTRAP`/`SYNC_PULL`/
+`SYNC_PUSH`/`SYNC_ERROR_HINT` shell variables, set once near the top and interpolated into the
+lead/worker system-prompt heredocs) — this is a separate mechanism from the doc-rewriting `sed`
+above and needs updating in lockstep if `bd`'s or `br`'s command surface changes again. It also
+runs `bd bootstrap -y` / `br sync --import-only` once per worker worktree right after `git worktree
+add`, so a worker's first task doesn't fail on a missing local database.
 
 ## Script relationships
 
@@ -107,6 +132,16 @@ by an explicit deny list of catastrophic patterns (force-push to main, `rm -rf /
 commands, etc.), and an optional Agent Mail pre-commit guard for multi-agent file-conflict
 prevention. `.claude/settings.granular.json` is a stricter alternative requiring per-command
 approval — swap it in by renaming it to `settings.json` if you don't want to rely on DCG.
+
+`scripts/swarm-start`'s lead and worker `claude -p` invocations additionally pass
+`--dangerously-skip-permissions` (the PA pane does not — a human is present there to answer
+prompts, and the point of the flag is specifically that lead/worker run unattended, where a
+permission prompt with nobody to answer it would just hang the loop forever). This is a deliberate
+combination, not a gap: `--dangerously-skip-permissions` disables the interactive prompt and the
+`allow`/`deny` lists, but **not** `PreToolUse` hooks — DCG keeps firing regardless, since hooks are
+a separate enforcement mechanism from the permission engine. The one real trade-off is that the
+`deny` list's specific patterns aren't enforced under skip-permissions (only DCG's `core.filesystem`
++ `core.git` packs are, which cover most but not necessarily all of the same ground).
 
 ## iOS variant
 
