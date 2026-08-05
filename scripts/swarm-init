@@ -82,6 +82,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# bd's `init` also runs an agent-integration wizard by default — editing
+# AGENTS.md/CLAUDE.md, installing a Codex integration, installing git hooks,
+# and making its own commit. This repo already supplies its own AGENTS.md
+# and CLAUDE.md, so skip all of that; the database is all `init` needs to do
+# here. br has no equivalent wizard, so no flags needed for it.
+INIT_FLAGS=""
+if [ "$TRACKER" = "bd" ]; then
+    INIT_FLAGS="--skip-agents --skip-hooks"
+fi
+
 PROJECT_DIR="$CODE_DIR/$PROJECT_NAME"
 
 # --- Validate ---
@@ -152,7 +162,7 @@ git commit -m "Initial commit from claude_starting_repo_setup template"
 
 # Initialize beads if not already done
 if [ ! -f ".beads/metadata.json" ]; then
-    $TRACKER init
+    $TRACKER init $INIT_FLAGS
     if [ "$TRACKER" = "br" ]; then
         br sync --flush-only
     fi

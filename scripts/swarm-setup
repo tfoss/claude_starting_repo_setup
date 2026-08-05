@@ -39,6 +39,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# bd's `init` also runs an agent-integration wizard by default — editing
+# AGENTS.md/CLAUDE.md, installing a Codex integration, installing git hooks,
+# and making its own commit. This script already supplies its own AGENTS.md,
+# so skip all of that; the database is all `init` needs to do here. br has
+# no equivalent wizard, so no flags needed for it.
+INIT_FLAGS=""
+if [ "$TRACKER" = "bd" ]; then
+    INIT_FLAGS="--skip-agents --skip-hooks"
+fi
+
 if [ ! -d "$PROJECT_DIR/.git" ]; then
     echo "ERROR: $PROJECT_DIR is not a git repository"
     exit 1
@@ -79,7 +89,7 @@ fi
 
 # Init beads if needed
 if [ ! -d "$PROJECT_DIR/.beads" ]; then
-    (cd "$PROJECT_DIR" && $TRACKER init)
+    (cd "$PROJECT_DIR" && $TRACKER init $INIT_FLAGS)
 fi
 
 # Check for PROJECT.md

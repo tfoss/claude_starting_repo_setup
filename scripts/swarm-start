@@ -98,11 +98,17 @@ if [ "$TRACKER" = "bd" ]; then
     SYNC_PULL="bd dolt pull"           # existing local db: pull others' changes
     SYNC_PUSH="bd dolt push"           # publish local changes
     SYNC_ERROR_HINT="If a push is rejected: bd dolt pull, retry once, skip if still fails"
+    # bd's `init` also runs an agent-integration wizard by default — editing
+    # AGENTS.md/CLAUDE.md, installing a Codex integration, installing git
+    # hooks, and making its own commit. This repo already supplies its own
+    # AGENTS.md/CLAUDE.md, so skip all of that.
+    INIT_FLAGS="--skip-agents --skip-hooks"
 else
     SYNC_BOOTSTRAP="br sync --import-only"  # fresh worktree: build local DB from checked-out JSONL
     SYNC_PULL="br sync --import-only"
     SYNC_PUSH="br sync --flush-only"
     SYNC_ERROR_HINT="If FOREIGN KEY constraint failed: br sync --rebuild, retry once, skip if still fails"
+    INIT_FLAGS=""
 fi
 
 if ! command -v bv &>/dev/null; then
@@ -117,7 +123,7 @@ fi
 
 if [ ! -d "$PROJECT_DIR/.beads" ]; then
     echo "Initializing beads workspace..."
-    (cd "$PROJECT_DIR" && $TRACKER init)
+    (cd "$PROJECT_DIR" && $TRACKER init $INIT_FLAGS)
 fi
 
 # --- Agent Mail ---

@@ -94,6 +94,25 @@ above and needs updating in lockstep if `bd`'s or `br`'s command surface changes
 runs `bd bootstrap -y` / `br sync --import-only` once per worker worktree right after `git worktree
 add`, so a worker's first task doesn't fail on a missing local database.
 
+**`bd init` is not narrow — it's an onboarding wizard, and all three scripts call it bare.**
+Discovered the hard way: running `$TRACKER init` with no flags on a project with no `.beads/` yet
+doesn't just create the database. By default `bd init` also (1) appends its own Beads-integration
+block to `AGENTS.md` — additive, not destructive, clearly delimited by
+`<!-- BEGIN/END BEADS INTEGRATION -->` comments, but still unrequested content in a file this repo
+already owns; (2) creates a *new*, generic `CLAUDE.md` if none exists, with none of this repo's
+actual guidance; (3) auto-detects and sets up unrelated agent platforms (installed a `.codex/`
+integration and a `.agents/skills/beads/` directory in one real run, apropos of nothing); (4)
+installs git hooks by pointing `core.hooksPath` at `.beads/hooks/`; and (5) **makes its own git
+commit** — on a repo with zero prior commits, this became the root commit, ahead of the project's
+actual first commit. All three scripts now pass `--skip-agents --skip-hooks` when `$TRACKER` is
+`bd` (see the `INIT_FLAGS` variable set right after argument parsing in each script) — `bd`'s own
+docs describe both flags for exactly this "I already have my own AGENTS.md" case. `br` has no such
+wizard, so `INIT_FLAGS` is empty for it. `bd bootstrap` (used for worker worktrees, not `bd init`)
+does **not** carry any of this — it only touches the Dolt database — so the worktree-bootstrap step
+added above didn't need the same treatment. If you ever see `bd init` used bare in these scripts
+again, that's a regression: check for `--skip-agents --skip-hooks` before trusting it not to
+surprise-edit `AGENTS.md`/`CLAUDE.md` or commit on your behalf.
+
 ## Script relationships
 
 | Script | Purpose | Destructive? |
